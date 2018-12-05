@@ -20,7 +20,7 @@ normalise.adj <- function(adj)
 {
   D.sqrt <- sqrt(colSums(adj))
   D.sqrt[is.infinite(D.sqrt)] <- 0
-  A.tilde <- adjmatrix + Diagonal(dim(adj)[1])
+  A.tilde <- adj + diag(dim(adj)[1])
   P <- diag(D.sqrt)%*%A.tilde%*%diag(D.sqrt)
   return(P)
 }
@@ -29,13 +29,15 @@ chebyshev.polynomials <- function(adj, K)
 {
   adj.shape <- dim(adj)
   adj.normalised <- normalise.adj(adj)
-  laplacian <- Diagonal(adj.shape[1]) - adj.normalised
+  laplacian <- diag(adj.shape[1]) - adj.normalised
   largest_eigval <- eigen(laplacian,only.values = TRUE)$values
-  scaled_laplacian <- (2/largest_eigval[1])*laplacian - Diagonal(adj.shape[1])
+  scaled_laplacian <- (2/largest_eigval[1])*laplacian - diag(adj.shape[1])
   t_k <- list()
-  t_k[[1]] <- Diagonal(adj.shape[1])
+  t_k[[1]] <- diag(adj.shape[1])
   t_k[[2]] <- scaled_laplacian
-  if(K > 2){
+  
+  hop.deg <- K+1
+  if(hop.deg > 2){
     for(i in 3:K){
       t_k_minus_one <- t_k[[length(t_k)]]
       t_k_minus_two <- t_k[[(length(t_k)-1)]]
@@ -43,6 +45,8 @@ chebyshev.polynomials <- function(adj, K)
       t_k[[i]] <- t_k_temp
     }
   }
+  #delete 0 degree
+  t_k <- t_k[-1]
   return(t_k)
 }
 
@@ -56,12 +60,16 @@ subgraph.adj.extract <- function(nodes.pool,
   edge.weights <- c()
   for(i in 1:num.nodes){
     vi <- nodes.pool[i]
-    neighbor.vetices <- which(adj[vi,] > 1)
+    neighbor.vetices <- which(adj[vi,] > 0)
     selected.neighbor.indices <- which(nodes.pool %in% neighbor.vetices)
-    for(j in selected.neighbor.indices){
-      indices.i <- c(indices.i, i)
-      indices.j <- c(indices.j, j)
-      edge.weights <- c(edge.weights, adj[vi, vj])
+    
+    if(length(selected.neighbor.indices) > 0){
+      for(j in selected.neighbor.indices){
+        indices.i <- c(indices.i, i)
+        indices.j <- c(indices.j, j)
+        vj <- nodes.pool[j]
+        edge.weights <- c(edge.weights, adj[vi, vj])
+      }
     }
   }
   if(is.null(max.nodes)){
@@ -109,7 +117,7 @@ Graph.enclose.encode <- function(nodes.pairs,
     num.vertices <- length(all.vertices)
     label.vertices <- rep(1, num.vertices)
     decimal.vertices <- rep(1, num.vertices)
-    
+    label.vertices.changed <- FALSE
     while(label.vertices.changed){
       for(node.index in 1:num.vertices){
         node <- all.vertices[node.index]
@@ -120,15 +128,35 @@ Graph.enclose.encode <- function(nodes.pairs,
         decimal.vertices[node.index] <- label.vertices[node.index]+neigbor.decimals
       }
       label.vertices.update <- order(decimal.vertices)
-      label.vertices.changed <- (sum(((label.vertices-label.vertices.update)**2)) == 0)
+      label.vertices.changed <- !(sum(((label.vertices-label.vertices.update)**2)) == 0)
       label.vertices <- label.vertices.update
     }
     
     sorted.vertices <- all.vertices[order(label.vertices)]
+    
     if(num.vertices > max.nodes){
-      sorted.vertices <- sorted.vertices[-((max.nodes+1):num.vertices)]
+      
+      sorted.node.a.index <- which(sorted.vertices == nodes.pairs[[i]]$a)
+      sorted.node.b.index <- which(sorted.vertices == nodes.pairs[[i]]$b)
+      
+      if(sorted.node.a.index > max.nodes && sorted.node.b.index <= max.nodes){
+        sorted.vertices <- sorted.vertices[-((max.nodes):num.vertices)]
+        sorted.vertices <- c(sorted.vertices, nodes.pairs[[i]]$a)
+      }else if(sorted.node.a.index <= max.nodes && sorted.node.b.index > max.nodes){
+        sorted.vertices <- sorted.vertices[-((max.nodes):num.vertices)]
+        sorted.vertices <- c(sorted.vertices, nodes.pairs[[i]]$b)
+      }else if(sorted.node.a.index  > max.nodes && sorted.node.b.index > max.nodes){
+        sorted.vertices <- sorted.vertices[-((max.nodes-1):num.vertices)]
+        if(sorted.node.a.index < sorted.node.b.index){
+          sorted.vertices <- c(sorted.vertices, nodes.pairs[[i]]$a, nodes.pairs[[i]]$b)
+        }else{
+          sorted.vertices <- c(sorted.vertices, nodes.pairs[[i]]$b, nodes.pairs[[i]]$a)
+        }
+      }else{
+        sorted.vertices <- sorted.vertices[-((max.nodes+1):num.vertices)]
+      }
     }
-    node.pairs.data <- list(a=nodes.pairs[[i]]$a, b=nodes.pairs[[i]]$b, sorted_neighbors=sorted.vertices)
+    nodes.pairs.data <- list(a=nodes.pairs[[i]]$a, b=nodes.pairs[[i]]$b, sorted_neighbors=sorted.vertices)
     outputs[[i]] <- nodes.pairs.data
   }
   return(outputs)
@@ -245,17 +273,17 @@ loaddata.ppi <- function(){
 
 loaddata.cora <- function(){
   #csv_cites <-   "I:/Desktop/R/SAGE-GRAPH-R/example_data/CORA/cites.csv"
-  csv_cites <- "./example_data/CORA/cites.csv"
+  csv_cites <- "../example_data/CORA/cites.csv"
   edges.cites <- read.csv(csv_cites, header = FALSE)
   edges.cites <- as.matrix(edges.cites[2:dim(edges.cites)[1],])
   
   #csv_paper <-   "I:/Desktop/R/SAGE-GRAPH-R/example_data/CORA/paper.csv"
-  csv_paper <- "./example_data/CORA/paper.csv"
+  csv_paper <- "../example_data/CORA/paper.csv"
   paper.class <- read.csv(csv_paper, header = FALSE)
   paper.class <- as.matrix(paper.class[2:dim(paper.class)[1],])
   
   #csv_content <- "I:/Desktop/R/SAGE-GRAPH-R/example_data/CORA/content.csv"
-  csv_content <- "./example_data/CORA/content.csv"
+  csv_content <- "../example_data/CORA/content.csv"
   content.class <- read.csv(csv_content, header = FALSE)
   content.class <- content.class[2:dim(content.class)[1],]
   column.names <-  c("paper_id",as.character(unique(content.class$V2)),"class")
@@ -292,7 +320,7 @@ loaddata.cora <- function(){
   
   A.tilde <- adjmatrix + Diagonal(dim(adjmatrix)[1])
   
-  P <- Diagonal(D.sqrt)%*%A.tilde%*%Diagonal(D.sqrt)
+  P <- diag(D.sqrt)%*%A.tilde%*% diag(D.sqrt)
   
   outputs <- list(adjmatrix = adjmatrix, P = P, Atilde = A.tilde, Dsqrt = D.sqrt, graph = graph, content = content.df)
   return(outputs)

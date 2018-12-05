@@ -18,8 +18,6 @@
 # under the License.
 
 require(mxnet)
-source("model.R")
-#source("Optimizer.R")
 
 is.param.name <- function(name) 
 { 
@@ -247,7 +245,61 @@ GCN.setup.model <- function(gcn.sym,
 }
 
 
-
+GCN.link.setup.model <- function(gcn.sym,
+                                 max.nodes,
+                                 input.size,
+                                 batch.size,
+                                 ctx = mx.ctx.default(),
+                                 initializer=mx.init.uniform(0.01))
+{
+  arg.names <- gcn.sym$arguments
+  input.shape <- list()
+  support.shape1 <- 1
+  K <- length(random.neighbor)
+  
+  for(name in arg.names){
+    if( grepl('label$', name) )
+    {
+      input.shape[[name]] <- c(batch.size)
+    }else if( grepl('data$', name) ){
+      input.shape[[name]] <- c(input.size, max.nodes,batch.size)
+    }else{
+      for(i in K:1){
+        variable.P <- paste0("P.",i,".tilde")
+        if(grepl(variable.P, name)){
+          input.shape[[name]] <- c(max.nodes, max.nodes)
+        }
+      }
+    }
+  }
+  
+  params <- mx.model.init.params(symbol = gcn.sym, input.shape = input.shape, initializer = initializer, ctx = ctx)
+  
+  args <- input.shape
+  args$symbol <- gcn.sym
+  args$ctx <- ctx
+  args$grad.req <- 'add'
+  gcn.exec <- do.call(mx.simple.bind, args)
+  
+  mx.exec.update.arg.arrays(gcn.exec, params$arg.params, match.name = TRUE)
+  mx.exec.update.aux.arrays(gcn.exec, params$aux.params, match.name = TRUE)
+  
+  grad.arrays <- list()
+  for (name in names(gcn.exec$ref.grad.arrays)) {
+    if (is.param.name(name))
+      grad.arrays[[name]] <- gcn.exec$ref.arg.arrays[[name]]*0
+  }
+  mx.exec.update.grad.arrays(gcn.exec, grad.arrays, match.name=TRUE)
+  
+  return (list(gcn.exec = gcn.exec, 
+               symbol = gcn.sym,
+               K = K,
+               random.neighbor = random.neighbor,
+               layer.vecs = layer.vecs,
+               batch.size = batch.size,
+               input.size = input.size))
+  
+}
 
 
 

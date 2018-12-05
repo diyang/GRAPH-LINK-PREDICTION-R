@@ -20,7 +20,7 @@
 require('mxnet')
 
 Graph.Convolution <- function(data,
-                              neighbors,
+                              neighbors=NULL,
                               tP, 
                               num.hidden,
                               dropout = 0)
@@ -28,15 +28,18 @@ Graph.Convolution <- function(data,
   if(dropout > 0){
     data <- mx.symbol.Dropout(data=data, p=dropout)
   }
+  if(is.null(neighbors)){
+    neighbors <- data
+  }
   data.aggerator <- mx.symbol.dot(tP, neighbors)
-  conv.input <- mx.symbol.concat(data = c(data, data.aggerator), num.args = 2, dim = 1)
+  conv.input <- mx.symbol.Concat(data = c(data, data.aggerator), num.args = 2, dim = 1)
   graph.output <- mx.symbol.FullyConnected(data=conv.input, num_hidden = num.hidden)
   graph.activation <- mx.symbol.Activation(data=graph.output, act.type='relu')
   graph.L2norm <- mx.symbol.L2Normalization(graph.activation)
   return(graph.L2norm)
 }
 
-GCN.two.layer.model <- function(num.hidden, num.label, dropout = 0){
+GCN.layer.node.classifiction <- function(num.hidden, num.label, dropout = 0){
   label <- mx.symbol.Variable('label')
   layer.tP <- list()
   layer.H  <- list()
@@ -63,5 +66,58 @@ GCN.two.layer.model <- function(num.hidden, num.label, dropout = 0){
   
   fc <- mx.symbol.FullyConnected(data=layer.outputs[[1]], num.hidden=num.label)
   loss.all <- mx.symbol.SoftmaxOutput(data=fc, label=label, name="sm")
+  return(loss.all)
+}
+
+GCN.layer.link.prediction <- function(input.size,
+                                      max.nodes,
+                                      batch.size,
+                                      num.hidden,
+                                      num.filters, 
+                                      dropout = 0)
+{
+  label <- mx.symbol.Variable('label')
+  data <- mx.symbol.Variable('data')
+  layer.tP <- list()
+  K <- length(num.hidden)
+  for(i in 1:K){
+    layer.tP[[i]] <- mx.symbol.Variable(paste0("P.",i,".tilde"))
+  }
+  
+  data.slice <- mx.symbol.SliceChannel(data=data, num_outputs=batch.size, axis= 2, squeeze_axis=1)
+  conv.1d.input.slice <- list()
+  for(slice in 1:batch.size){
+    layer.outputs <- list()
+    for(i in K:1){
+      layer.outputs[[i]] <- Graph.Convolution(data=data.slice[[slice]],
+                                              tP=layer.tP[[i]], 
+                                              num.hidden = num.hidden[i])
+    }
+    conv.1d.input.temp <- mx.symbol.Concat(data = c(data.slice[[slice]], layer.outputs), num.args = (K+1), dim = 1)
+    conv.1d.input.temp <- mx.symbol.transpose(data=conv.1d.input.temp, axes=c(0,1))
+    concat.input.size <- input.size + sum(num.hidden)
+    conv.1d.input.temp <- mx.symbol.Reshape(data=conv.1d.input.temp, shape=c(max.nodes,concat.input.size,1,1))
+    conv.1d.input.slice[[slice]] <- conv.1d.input.temp 
+  }
+  conv.1d.input <- mx.symbol.Concat(data=conv.1d.input.slice, num.args = batch.size, dim=0)
+  
+  # 1-D convolution
+  # 1st convolutional layer 
+  conv_1 <- mx.symbol.Convolution(data = conv.1d.input, kernel = c(1, ceiling(concat.input.size/10)), num_filter = num.filters[1], pad=c(0,1)) 
+  tanh_1 <- mx.symbol.Activation(data = conv_1, act_type = "tanh") 
+  pool_1 <- mx.symbol.Pooling(data = tanh_1, pool_type = "max", kernel = c(1,4), pad=c(0,1)) 
+  # 2nd convolutional layer 
+  conv_2 <- mx.symbol.Convolution(data = pool_1, kernel = c(1, ceiling(concat.input.size/10)), num_filter = num.filters[2], pad=c(0,1)) 
+  tanh_2 <- mx.symbol.Activation(data = conv_2, act_type = "tanh") 
+  pool_2 <- mx.symbol.Pooling(data=tanh_2, pool_type = "max", kernel = c(1,4), pad=c(0,1)) 
+  
+  # Dense layers
+  # 1st fully connected layer 
+  flatten <- mx.symbol.Flatten(data = pool_2) 
+  fc_1 <- mx.symbol.FullyConnected(data = flatten, num_hidden = 100) 
+  tanh_3 <- mx.symbol.Activation(data = fc_1, act_type = "tanh") 
+  # 2nd fully connected layer 
+  fc_2 <- mx.symbol.FullyConnected(data=tanh_3, num_hidden=2) 
+  loss.all <- mx.symbol.SoftmaxOutput(data=fc_2, label=label, name="sm") 
   return(loss.all)
 }
