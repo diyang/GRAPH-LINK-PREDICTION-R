@@ -7,13 +7,36 @@ source("model.R")
 source("utils.R")
 source("train.R")
 
+# model establish
+
+
 graph.input <- loaddata.cora()
-edge.list <- as_edgelist(graph.input$graph)
-
-node.pair <- list(a=edge.list[1,1], b=edge.list[1,2])
-nodes.pairs <- list(node.pair)
-
+data <-as.matrix(graph.input$content[, -which(names(graph.input$content) %in% c("paper_id", "class"))])
+graph.input[["features"]] <- data
 adj <- graph.input$adjmatrix
+edge.list <- as_edgelist(graph.input$graph)
+num.edge <- dim(edge.list)[1]
+pair.indices.pool <- sample(c(1:num.edge), batch.size, replace=FALSE)
+nodes.pairs <- list()
+count <- 1
+for(i in pair.indices.pool){
+  node.pair <- list(a=edge.list[i,1], b=edge.list[i,2])
+  nodes.pairs[[count]] <- node.pair
+  count <- count + 1
+}
+
+K <- 2
+batch.size <- 100
+num.hidden <- c(20,20)
+input.size <- 30
+max.nodes <- 300
+num.filters <- c(10,5)
+input.size <- dim(data)[2]
+
+gcn.pair.train.input <- Graph.enclose.encode(nodes.pairs, adj, K, max.nodes)
+
+
+
 
 
 
@@ -29,12 +52,7 @@ data <-as.matrix(graph.input$content[, -which(names(graph.input$content) %in% c(
 graph.input[["features"]] <- list(data=data, label=label) 
 
 
-# model establish
-batch.size <- 100
-num.hidden <- c(20,20)
-input.size <- 30
-max.nodes <- 300
-num.filters <- c(10,5)
+
 
 K <- 2
 input.shape <- list()
@@ -51,15 +69,11 @@ gcn.sym <- GCN.layer.link.prediction(input.size,
                                      num.hidden, 
                                      num.filters)
 
-slist <- gcn.sym$infer.shape(input.shape) 
-
-
-gcn.model <- GCN.setup.model(gcn.sym,
-                             random.neighbor,
-                             input.size,
-                             batch.size,
-                             mx.ctx.default(),
-                             mx.init.uniform(0.01))
+gcn.model <- GCN.link.setup.model(gcn.sym, 
+                                  max.nodes,
+                                  input.size,
+                                  batch.size,
+                                  K=2)
 
 # training process
 num.nodes.train <- floor((length(label) * 0.3)/batch.size)*batch.size

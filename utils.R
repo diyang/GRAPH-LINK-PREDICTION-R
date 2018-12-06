@@ -7,10 +7,18 @@ array2decimal <- function(num.array)
 {
   len <- length(num.array)
   for(i in 1:len){
-    if(i == 1){
-      decimal.num <- num.array[i]*(0.1**i)
+    if(num.array[i] >= 10 && num.array[i]< 100){
+      power_i <- i+1
+    }else if(num.array[i] >= 100 && num.array[i]< 1000){
+      power_i <- i+2
     }else{
-      decimal.num <- decimal.num+num.array[i]*(0.1**i)
+      power_i <- i
+    }
+    
+    if(i == 1){
+      decimal.num <- num.array[i]*(0.1**power_i)
+    }else{
+      decimal.num <- decimal.num+num.array[i]*(0.1**power_i)
     }
   }
   return(decimal.num)
@@ -87,7 +95,7 @@ Graph.enclose.encode <- function(nodes.pairs,
 {
   num.pairs <- length(nodes.pairs)
   outputs <- list()
-  for(i in num.pairs){
+  for(i in 1:num.pairs){
     
     # K-hop neigborhood search
     for(hop in 1:K){
@@ -117,7 +125,8 @@ Graph.enclose.encode <- function(nodes.pairs,
     num.vertices <- length(all.vertices)
     label.vertices <- rep(1, num.vertices)
     decimal.vertices <- rep(1, num.vertices)
-    label.vertices.changed <- FALSE
+
+    label.vertices.changed <- TRUE
     while(label.vertices.changed){
       for(node.index in 1:num.vertices){
         node <- all.vertices[node.index]
@@ -127,11 +136,24 @@ Graph.enclose.encode <- function(nodes.pairs,
         #update labeling
         decimal.vertices[node.index] <- label.vertices[node.index]+neigbor.decimals
       }
-      label.vertices.update <- order(decimal.vertices)
-      label.vertices.changed <- !(sum(((label.vertices-label.vertices.update)**2)) == 0)
-      label.vertices <- label.vertices.update
+      sorted.decimal.vertices <- sort(decimal.vertices, index.return=TRUE)
+      
+      label <- 1
+      label.vertices.old <- label.vertices
+      for(sort.index in 1:num.vertices){
+        if(sort.index == 1){
+          label.vertices[sorted.decimal.vertices$ix[sort.index]] <- label
+          tmp.decimal.vertex <- sorted.decimal.vertices$x[sort.index]
+        }else{
+          if(tmp.decimal.vertex < sorted.decimal.vertices$x[sort.index]){
+            label <- label+1
+          }
+          label.vertices[sorted.decimal.vertices$ix[sort.index]] <- label
+          tmp.decimal.vertex <- sorted.decimal.vertices$x[sort.index]
+        }
+      }
+      label.vertices.changed <- !(sum(((label.vertices.old-label.vertices)**2)) == 0)
     }
-    
     sorted.vertices <- all.vertices[order(label.vertices)]
     
     if(num.vertices > max.nodes){
@@ -156,7 +178,10 @@ Graph.enclose.encode <- function(nodes.pairs,
         sorted.vertices <- sorted.vertices[-((max.nodes+1):num.vertices)]
       }
     }
-    nodes.pairs.data <- list(a=nodes.pairs[[i]]$a, b=nodes.pairs[[i]]$b, sorted_neighbors=sorted.vertices)
+    
+    subgraph.adj <- subgraph.adj.extract(sorted.vertices, max.nodes, adj)
+    subgraph.tP <- chebyshev.polynomials(subgraph.adj, K)
+    nodes.pairs.data <- list(a=nodes.pairs[[i]]$a, b=nodes.pairs[[i]]$b, sorted_neighbors=sorted.vertices, tP=subgraph.tP)
     outputs[[i]] <- nodes.pairs.data
   }
   return(outputs)
@@ -273,17 +298,17 @@ loaddata.ppi <- function(){
 
 loaddata.cora <- function(){
   #csv_cites <-   "I:/Desktop/R/SAGE-GRAPH-R/example_data/CORA/cites.csv"
-  csv_cites <- "../example_data/CORA/cites.csv"
+  csv_cites <- "./example_data/CORA/cites.csv"
   edges.cites <- read.csv(csv_cites, header = FALSE)
   edges.cites <- as.matrix(edges.cites[2:dim(edges.cites)[1],])
   
   #csv_paper <-   "I:/Desktop/R/SAGE-GRAPH-R/example_data/CORA/paper.csv"
-  csv_paper <- "../example_data/CORA/paper.csv"
+  csv_paper <- "./example_data/CORA/paper.csv"
   paper.class <- read.csv(csv_paper, header = FALSE)
   paper.class <- as.matrix(paper.class[2:dim(paper.class)[1],])
   
   #csv_content <- "I:/Desktop/R/SAGE-GRAPH-R/example_data/CORA/content.csv"
-  csv_content <- "../example_data/CORA/content.csv"
+  csv_content <- "./example_data/CORA/content.csv"
   content.class <- read.csv(csv_content, header = FALSE)
   content.class <- content.class[2:dim(content.class)[1],]
   column.names <-  c("paper_id",as.character(unique(content.class$V2)),"class")

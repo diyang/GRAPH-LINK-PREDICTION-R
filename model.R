@@ -79,18 +79,21 @@ GCN.layer.link.prediction <- function(input.size,
   label <- mx.symbol.Variable('label')
   data <- mx.symbol.Variable('data')
   layer.tP <- list()
+  layer.tP.slice <- list()
   K <- length(num.hidden)
-  for(i in 1:K){
-    layer.tP[[i]] <- mx.symbol.Variable(paste0("P.",i,".tilde"))
-  }
   
   data.slice <- mx.symbol.SliceChannel(data=data, num_outputs=batch.size, axis= 2, squeeze_axis=1)
+  for(i in 1:K){
+    layer.tP[[i]] <- mx.symbol.Variable(paste0("P.",i,".tilde"))
+    layer.tP.slice[[i]] <- mx.symbol.SliceChannel(data=layer.tP[[i]], num_outputs=batch.size, axis= 2, squeeze_axis=1)
+  }
+  
   conv.1d.input.slice <- list()
   for(slice in 1:batch.size){
     layer.outputs <- list()
     for(i in K:1){
       layer.outputs[[i]] <- Graph.Convolution(data=data.slice[[slice]],
-                                              tP=layer.tP[[i]], 
+                                              tP=layer.tP.slice[[i]][[slice]], 
                                               num.hidden = num.hidden[i])
     }
     conv.1d.input.temp <- mx.symbol.Concat(data = c(data.slice[[slice]], layer.outputs), num.args = (K+1), dim = 1)
@@ -102,14 +105,18 @@ GCN.layer.link.prediction <- function(input.size,
   conv.1d.input <- mx.symbol.Concat(data=conv.1d.input.slice, num.args = batch.size, dim=0)
   
   # 1-D convolution
-  # 1st convolutional layer 
-  conv_1 <- mx.symbol.Convolution(data = conv.1d.input, kernel = c(1, ceiling(concat.input.size/10)), num_filter = num.filters[1], pad=c(0,1)) 
+  # 1st convolutional layer
+  
+  kernel_1 <- ceiling(concat.input.size/10)
+  conv_1 <- mx.symbol.Convolution(data = conv.1d.input, kernel = c(1, kernel_1), num_filter = num.filters[1], pad=c(0,1)) 
   tanh_1 <- mx.symbol.Activation(data = conv_1, act_type = "tanh") 
-  pool_1 <- mx.symbol.Pooling(data = tanh_1, pool_type = "max", kernel = c(1,4), pad=c(0,1)) 
+  pool_1 <- mx.symbol.Pooling(data = tanh_1, pool_type = "max", kernel = c(1,kernel_1), pad=c(0,1)) 
   # 2nd convolutional layer 
-  conv_2 <- mx.symbol.Convolution(data = pool_1, kernel = c(1, ceiling(concat.input.size/10)), num_filter = num.filters[2], pad=c(0,1)) 
+  
+  kernel_2 <- ceiling(kernel_1/4)
+  conv_2 <- mx.symbol.Convolution(data = pool_1, kernel = c(1, kernel_2), num_filter = num.filters[2], pad=c(0,1)) 
   tanh_2 <- mx.symbol.Activation(data = conv_2, act_type = "tanh") 
-  pool_2 <- mx.symbol.Pooling(data=tanh_2, pool_type = "max", kernel = c(1,4), pad=c(0,1)) 
+  pool_2 <- mx.symbol.Pooling(data=tanh_2, pool_type = "max", kernel = c(1,kernel_2), pad=c(0,1)) 
   
   # Dense layers
   # 1st fully connected layer 
