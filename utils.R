@@ -81,9 +81,17 @@ subgraph.adj.extract <- function(nodes.pool,
     }
   }
   if(is.null(max.nodes)){
-    sub.adj <- sparseMatrix(x=edge.weights, i=indices.i, j=indices.j, dims=c(num.nodes, num.nodes))
+    if(length(edge.weights) > 1){
+      sub.adj <- sparseMatrix(x=edge.weights, i=indices.i, j=indices.j, dims=c(num.nodes, num.nodes))
+    }else{
+      sub.adj <- Matrix(0, num.nodes, num.nodes, sparse = TRUE)
+    }
   }else{
-    sub.adj <- sparseMatrix(x=edge.weights, i=indices.i, j=indices.j, dims=c(max.nodes, max.nodes))
+    if(length(edge.weights) > 1){
+      sub.adj <- sparseMatrix(x=edge.weights, i=indices.i, j=indices.j, dims=c(max.nodes, max.nodes))
+    }else{
+      sub.adj <- Matrix(0, max.nodes, max.nodes, sparse = TRUE)
+    }
   }
   return(sub.adj)
 }
@@ -91,7 +99,7 @@ subgraph.adj.extract <- function(nodes.pool,
 Graph.enclose.encode <- function(nodes.pairs,
                                  adj,
                                  K,
-                                 max.nodes)
+                                 max.nodes=NULL)
 {
   num.pairs <- length(nodes.pairs)
   outputs <- list()
@@ -132,7 +140,11 @@ Graph.enclose.encode <- function(nodes.pairs,
         node <- all.vertices[node.index]
         neigbor.nodes <- which(adj[node,]>0)
         neigbor.indicies <- which(all.vertices %in% neigbor.nodes)
-        neigbor.decimals <- array2decimal(sort(label.vertices[neigbor.indicies]))
+        if(length(neigbor.indicies) > 0){
+          neigbor.decimals <- array2decimal(sort(label.vertices[neigbor.indicies]))
+        }else{
+          neigbor.decimals <- 0
+        }
         #update labeling
         decimal.vertices[node.index] <- label.vertices[node.index]+neigbor.decimals
       }
@@ -156,32 +168,33 @@ Graph.enclose.encode <- function(nodes.pairs,
     }
     sorted.vertices <- all.vertices[order(label.vertices)]
     
-    if(num.vertices > max.nodes){
-      
-      sorted.node.a.index <- which(sorted.vertices == nodes.pairs[[i]]$a)
-      sorted.node.b.index <- which(sorted.vertices == nodes.pairs[[i]]$b)
-      
-      if(sorted.node.a.index > max.nodes && sorted.node.b.index <= max.nodes){
-        sorted.vertices <- sorted.vertices[-((max.nodes):num.vertices)]
-        sorted.vertices <- c(sorted.vertices, nodes.pairs[[i]]$a)
-      }else if(sorted.node.a.index <= max.nodes && sorted.node.b.index > max.nodes){
-        sorted.vertices <- sorted.vertices[-((max.nodes):num.vertices)]
-        sorted.vertices <- c(sorted.vertices, nodes.pairs[[i]]$b)
-      }else if(sorted.node.a.index  > max.nodes && sorted.node.b.index > max.nodes){
-        sorted.vertices <- sorted.vertices[-((max.nodes-1):num.vertices)]
-        if(sorted.node.a.index < sorted.node.b.index){
-          sorted.vertices <- c(sorted.vertices, nodes.pairs[[i]]$a, nodes.pairs[[i]]$b)
+    if(!is.null(max.nodes)){
+      if(num.vertices > max.nodes){
+        
+        sorted.node.a.index <- which(sorted.vertices == nodes.pairs[[i]]$a)
+        sorted.node.b.index <- which(sorted.vertices == nodes.pairs[[i]]$b)
+        
+        if(sorted.node.a.index > max.nodes && sorted.node.b.index <= max.nodes){
+          sorted.vertices <- sorted.vertices[-((max.nodes):num.vertices)]
+          sorted.vertices <- c(sorted.vertices, nodes.pairs[[i]]$a)
+        }else if(sorted.node.a.index <= max.nodes && sorted.node.b.index > max.nodes){
+          sorted.vertices <- sorted.vertices[-((max.nodes):num.vertices)]
+          sorted.vertices <- c(sorted.vertices, nodes.pairs[[i]]$b)
+        }else if(sorted.node.a.index  > max.nodes && sorted.node.b.index > max.nodes){
+          sorted.vertices <- sorted.vertices[-((max.nodes-1):num.vertices)]
+          if(sorted.node.a.index < sorted.node.b.index){
+            sorted.vertices <- c(sorted.vertices, nodes.pairs[[i]]$a, nodes.pairs[[i]]$b)
+          }else{
+            sorted.vertices <- c(sorted.vertices, nodes.pairs[[i]]$b, nodes.pairs[[i]]$a)
+          }
         }else{
-          sorted.vertices <- c(sorted.vertices, nodes.pairs[[i]]$b, nodes.pairs[[i]]$a)
+          sorted.vertices <- sorted.vertices[-((max.nodes+1):num.vertices)]
         }
-      }else{
-        sorted.vertices <- sorted.vertices[-((max.nodes+1):num.vertices)]
       }
     }
-    
     subgraph.adj <- subgraph.adj.extract(sorted.vertices, max.nodes, adj)
     subgraph.tP <- chebyshev.polynomials(subgraph.adj, K)
-    nodes.pairs.data <- list(a=nodes.pairs[[i]]$a, b=nodes.pairs[[i]]$b, sorted_neighbors=sorted.vertices, tP=subgraph.tP)
+    nodes.pairs.data <- list(a=nodes.pairs[[i]]$a, b=nodes.pairs[[i]]$b, sorted_neighbors=sorted.vertices, tP=subgraph.tP, adj=subgraph.adj)
     outputs[[i]] <- nodes.pairs.data
   }
   return(outputs)
@@ -298,17 +311,17 @@ loaddata.ppi <- function(){
 
 loaddata.cora <- function(){
   #csv_cites <-   "I:/Desktop/R/SAGE-GRAPH-R/example_data/CORA/cites.csv"
-  csv_cites <- "./example_data/CORA/cites.csv"
+  csv_cites <- "../example_data/CORA/cites.csv"
   edges.cites <- read.csv(csv_cites, header = FALSE)
   edges.cites <- as.matrix(edges.cites[2:dim(edges.cites)[1],])
   
   #csv_paper <-   "I:/Desktop/R/SAGE-GRAPH-R/example_data/CORA/paper.csv"
-  csv_paper <- "./example_data/CORA/paper.csv"
+  csv_paper <- "../example_data/CORA/paper.csv"
   paper.class <- read.csv(csv_paper, header = FALSE)
   paper.class <- as.matrix(paper.class[2:dim(paper.class)[1],])
   
   #csv_content <- "I:/Desktop/R/SAGE-GRAPH-R/example_data/CORA/content.csv"
-  csv_content <- "./example_data/CORA/content.csv"
+  csv_content <- "../example_data/CORA/content.csv"
   content.class <- read.csv(csv_content, header = FALSE)
   content.class <- content.class[2:dim(content.class)[1],]
   column.names <-  c("paper_id",as.character(unique(content.class$V2)),"class")

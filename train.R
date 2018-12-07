@@ -250,16 +250,16 @@ GCN.setup.model <- function(gcn.sym,
 #
 #---------------------------------------------------------------------------
 
-GCN.trian.model <- function(model,
-                            graph.input,
-                            node.pair.train.pool,
-                            node.pair.valid.pool = NULL,
-                            num.epoch,
-                            learning.rate = 0.01,
-                            weight.decay = 0,
-                            clip.gradient = 1,
-                            optimizer = 'sgd',
-                            lr.scheduler = NULL)
+GCN.link.trian.model <- function(model,
+                                 graph.input,
+                                 train.data,
+                                 valid.data = NULL,
+                                 num.epoch,
+                                 learning.rate = 0.01,
+                                 weight.decay = 0,
+                                 clip.gradient = 1,
+                                 optimizer = 'sgd',
+                                 lr.scheduler = NULL)
 {
   m <- model
   batch.size <- m$batch.size
@@ -283,18 +283,30 @@ GCN.trian.model <- function(model,
     # batch training #
     ##################
     train.nll <- 0
-    num.batch.train <- floor(length(node.pair.train.pool)/batch.size)
+    num.batch.train <- floor(length(train.data$nodes.pairs)/batch.size)
     for(batch.counter in 1:num.batch.train){
       # gcn input data preparation
       batch.begin <- (batch.counter-1)*batch.size+1
-      node.pair.train.batch <- node.pair.train.pool[batch.begin:(batch.begin+batch.size-1)] 
-      gcn.pair.train.input <- Graph.enclose.encode(node.pair.train.batch, graph.input$adjmatrix, K, max.nodes)
+      node.pair.train.batch       <- train.data$nodes.pairs[batch.begin:(batch.begin+batch.size-1)] 
+      node.pair.train.label.batch <- train.data$pairs.label[batch.begin:(batch.begin+batch.size-1)]
+      gcn.pair.train.input <- Graph.enclose.encode(node.pair.train.batch, graph.input$adjmatrix, K, max.nodes=NULL)
+      
+      idx <- 4
+      sub.graph <- graph_from_adjacency_matrix(gcn.pair.train.input[[idx]]$adj, mode = "undirected" )
+      V(sub.graph)$name <- gcn.pair.train.input[[idx]]$sorted_neighbors
+      
+      a <- gcn.pair.train.input[[idx]]$a
+      b <- gcn.pair.train.input[[idx]]$b
+      
+      plot(sub.graph, vertex.label.color="black",
+           vertex.color=c( "tomato", "gold")[1+(V(sub.graph)$name %in% c(a,b))],
+           edge.width=3, vertex.size = c(12,17)[1+(V(sub.graph)$name %in% c(a,b))])
       
       # initialise data tensor container
-      gcn.pair.data <- array(0, dim=c(batch.size, input.size, max.nodes))
-      gcn.pair.tP <- list()
+      gcn.pair.t.data <- array(0, dim=c(batch.size, input.size, max.nodes))
+      gcn.pair.t.tP <- list()
       for(i in 1:K){
-        gcn.pair.tP[[i]] <- array(0, dim=c(batch.size, max.nodes, max.nodes))
+        gcn.pair.t.tP[[i]] <- array(0, dim=c(batch.size, max.nodes, max.nodes))
       }
       
       for(pair in 1:batch.size){
@@ -304,20 +316,20 @@ GCN.trian.model <- function(model,
           padding <- matrix(0, (max.nodes - num.node), input.size)
           mat.temp <- rbind(mat.temp, padding)
         }
-        gcn.pair.data[pair,,] <- t(mat.temp)
+        gcn.pair.t.data[pair,,] <- t(mat.temp)
         for(i in 1:K){
-          gcn.pair.tP[[i]][pair,,] <- t(as.matrix(gcn.pair.train.input[[pair]]$tP[[i]]))
+          gcn.pair.t.tP[[i]][pair,,] <- t(as.matrix(gcn.pair.train.input[[pair]]$tP[[i]]))
         }
       }
       gcn.pair.train.data <- list()
-      gcn.pair.train.data[['data']] <- mx.nd.array(gcn.pair.data)
+      gcn.pair.train.data[['data']] <- mx.nd.array(gcn.pair.t.data)
       for(i in 1:K){
         variable.P <- paste0("P.",i,".tilde")
-        gcn.pair.train.data[[variable.P]] <- mx.nd.array(gcn.pair.tP[[i]])
+        gcn.pair.train.data[[variable.P]] <- mx.nd.array(gcn.pair.t.tP[[i]])
       }
-      gcn.pair.train.data[["label"]] <- mx.nd.array(label)
+      gcn.pair.train.data[["label"]] <- mx.nd.array(node.pair.train.label.batch)
       
-      mx.exec.update.arg.arrays(m$gcn.exec, gcn.train.data, match.name = TRUE)
+      mx.exec.update.arg.arrays(m$gcn.exec, gcn.pair.train.data, match.name = TRUE)
       mx.exec.forward(m$gcn.exec, is.train = TRUE)
       mx.exec.backward(m$gcn.exec)
       arg.blocks <- opt.updater(weight = m$gcn.exec$ref.arg.arrays, grad = m$gcn.exec$ref.grad.arrays)
@@ -334,41 +346,42 @@ GCN.trian.model <- function(model,
       cat("\n")
       cat("Validating \n")
       valid.nll <- 0
-      num.batch.valid <- floor(length(nodes.valid.pool)/batch.size)
+      num.batch.valid <- floor(length(valid.data$nodes.pairs)/batch.size)
       for(batch.counter in 1:num.batch.valid){
         # gcn input data preparation
         batch.begin <- (batch.counter-1)*batch.size+1
-        nodes.valid.batch <- nodes.valid.pool[batch.begin:(batch.begin+batch.size-1)] 
-        gcn.valid.input <- Graph.receptive.fields.computation(nodes.valid.batch, graph.input$P, graph.input$adjmatrix, random.neighbor)
+        node.pair.valid.batch       <- valid.data$nodes.pairs[batch.begin:(batch.begin+batch.size-1)]
+        node.pair.valid.label.batch <- valid.data$pairs.label[batch.begin:(batch.begin+batch.size-1)]
+        gcn.pair.valid.input <- Graph.enclose.encode(node.pair.valid.batch, graph.input$adjmatrix, K, max.nodes)
         
-        gcn.valid.data <- list()
+        # initialise data tensor container
+        gcn.pair.v.data <- array(0, dim=c(batch.size, input.size, max.nodes))
+        gcn.pair.v.tP <- list()
         for(i in 1:K){
-          variable.P <- paste0("P.",i,".tilde")
-          variable.H <- paste0("H.",i,".tilde")
-          
-          gcn.valid.data[[variable.P]] <- mx.nd.array(t(gcn.valid.input$tP[[i]]))
-          
-          if(length(gcn.valid.input$H[[i]]) == layer.vecs[i]){
-            gcn.valid.data[[variable.H]] <- mx.nd.array(t(graph.input$features$data[gcn.valid.input$H[[i]],]))
-          }else{
-            #padding layer inputs
-            offset.vecs <- layer.vecs[i] - length(gcn.valid.input$H[[i]])
-            padding <- matrix(0, offset.vecs, input.size)
-            gcn.valid.data[[variable.H]] <- mx.nd.array(t(rbind(as.matrix(graph.input$features$data[gcn.valid.input$H[[i]],]),padding)))
+          gcn.pair.v.tP[[i]] <- array(0, dim=c(batch.size, max.nodes, max.nodes))
+        }
+        
+        for(pair in 1:batch.size){
+          mat.temp <- graph.input$features[gcn.pair.valid.input[[pair]]$sorted_neighbors,]
+          num.node <- dim(mat.temp)[1]
+          if(num.node < max.nodes){
+            padding <- matrix(0, (max.nodes - num.node), input.size)
+            mat.temp <- rbind(mat.temp, padding)
+          }
+          gcn.pair.v.data[pair,,] <- t(mat.temp)
+          for(i in 1:K){
+            gcn.pair.v.tP[[i]][pair,,] <- t(as.matrix(gcn.pair.valid.input[[pair]]$tP[[i]]))
           }
         }
-        
-        if(length(gcn.valid.input$H[[K+1]]) == layer.vecs[K+1]){
-          gcn.valid.data[[paste0("H.",(K+1),".tilde")]] <- mx.nd.array(t(graph.input$features$data[gcn.valid.input$H[[(K+1)]],]))
-        }else{
-          #padding layer inputs
-          offset.vecs <- layer.vecs[K+1] - length(gcn.valid.input$H[[K+1]])
-          padding <- matrix(0, offset.vecs, input.size)
-          gcn.valid.data[[paste0("H.",(K+1),".tilde")]] <- mx.nd.array(t(rbind(as.matrix(graph.input$features$data[gcn.valid.input$H[[(K+1)]],]),padding)))
+        gcn.pair.valid.data <- list()
+        gcn.pair.valid.data[['data']] <- mx.nd.array(gcn.pair.v.data)
+        for(i in 1:K){
+          variable.P <- paste0("P.",i,".tilde")
+          gcn.pair.valid.data[[variable.P]] <- mx.nd.array(gcn.pair.v.tP[[i]])
         }
-        gcn.valid.data[["label"]] <- mx.nd.array(graph.input$features$label[gcn.valid.input$H[[1]]])
+        gcn.pair.valid.data[["label"]] <- mx.nd.array(node.pair.valid.label.batch)
         
-        mx.exec.update.arg.arrays(m$gcn.exec, gcn.valid.data, match.name = TRUE)
+        mx.exec.update.arg.arrays(m$gcn.exec, gcn.pair.valid.data, match.name = TRUE)
         mx.exec.forward(m$gcn.exec, is.train = FALSE)
         
         label.probs <- mx.nd.choose.element.0index(m$gcn.exec$ref.outputs[["sm_output"]], m$gcn.exec$ref.arg.arrays[["label"]])
@@ -380,11 +393,6 @@ GCN.trian.model <- function(model,
   }
   return(m)
 }
-
-
-
-
-
 
 GCN.link.setup.model <- function(gcn.sym,
                                  max.nodes,

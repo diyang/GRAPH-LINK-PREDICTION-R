@@ -1,67 +1,75 @@
 require(mxnet)
 #windows
-#setwd("I:/Desktop/R/SAGE-GRAPH-R/graph_link_prediction")
+setwd("I:/Desktop/R/SAGE-GRAPH-R/graph_link_prediction")
 #Mac
-setwd("~/Documents/GRAPH-LINK-PREDICTION-R")
+#setwd("~/Documents/GRAPH-LINK-PREDICTION-R")
 source("model.R")
 source("utils.R")
 source("train.R")
 
-# model establish
+# load graph
+org.graph.input <- loaddata.cora()
+data <-as.matrix(org.graph.input$content[, -which(names(org.graph.input$content) %in% c("paper_id", "class"))])
+org.graph.input[["features"]] <- data
+adj <- org.graph.input$adjmatrix
+edge.list <- as_edgelist(org.graph.input$graph)
 
-
-graph.input <- loaddata.cora()
-data <-as.matrix(graph.input$content[, -which(names(graph.input$content) %in% c("paper_id", "class"))])
-graph.input[["features"]] <- data
-adj <- graph.input$adjmatrix
-edge.list <- as_edgelist(graph.input$graph)
+# deliberately extract some edges, and re-construct graph
+batch.size <- 100
 num.edge <- dim(edge.list)[1]
-pair.indices.pool <- sample(c(1:num.edge), batch.size, replace=FALSE)
-nodes.pairs <- list()
+pos.pair.indices.pool <- sample(c(1:num.edge), (batch.size*3), replace=FALSE)
+positive.nodes.pairs <- list()
 count <- 1
-for(i in pair.indices.pool){
+for(i in pos.pair.indices.pool){
   node.pair <- list(a=edge.list[i,1], b=edge.list[i,2])
-  nodes.pairs[[count]] <- node.pair
+  positive.nodes.pairs[[count]] <- node.pair
   count <- count + 1
 }
+
+num.node <- dim(adj)[1]
+neg.pair.indices.pool <- sample(c(1:num.node), (batch.size*3), replace=FALSE)
+negative.nodes.pairs <- list()
+count <- 1
+negative.edge.list <- c()
+for(i in neg.pair.indices.pool){
+  null.edge <- which(adj[i,] == 0)
+  num.null.edge <- length(null.edge)
+  if(num.null.edge > 0){
+    neg.index <- sample(c(1:num.null.edge), 1)
+    node.pair <- list(a=i, b=null.edge[neg.index])
+    negative.nodes.pairs[[count]] <- node.pair
+    count <- count + 1
+  }
+}
+
+positive.label <- rep(1, length(positive.nodes.pairs))
+negative.label <- rep(2, length(negative.nodes.pairs))
+
+nodes.pairs <- c(positive.nodes.pairs, negative.nodes.pairs)
+pairs.label <- c(positive.label, negative.label)
+
+num.pairs <- length(nodes.pairs)
+shuffled.indices <- sample(c(1:num.pairs))
+shuffled.nodes.pairs <- nodes.pairs[shuffled.indices]
+shuffled.pairs.label <- pairs.label[shuffled.indices]
+
+new.edge.list <- edge.list[-(pos.pair.indices.pool),]
+new.graph <- graph_from_edgelist(new.edge.list, directed = FALSE)
+
+adjmatrix <- as_adj(new.graph, type = 'both', sparse = igraph_opt("sparsematrices"))
+D.sqrt <- sqrt(colSums(adjmatrix))
+A.tilde <- adjmatrix + Diagonal(dim(adjmatrix)[1])
+P <- diag(D.sqrt)%*%A.tilde%*% diag(D.sqrt)
+
+new.graph.input <- list(adjmatrix = adjmatrix, P = P, Atilde = A.tilde, Dsqrt = D.sqrt, graph = new.graph)
+new.graph.input[['features']] <- data
 
 K <- 2
 batch.size <- 100
 num.hidden <- c(20,20)
-input.size <- 30
-max.nodes <- 300
+max.nodes <- 100
 num.filters <- c(10,5)
 input.size <- dim(data)[2]
-
-gcn.pair.train.input <- Graph.enclose.encode(nodes.pairs, adj, K, max.nodes)
-
-
-
-
-
-
-level.label <- unique(graph.input$content$class)
-num.label <- length(unique(level.label))
-label.text <-graph.input$content$class 
-label <- rep(0, length(label.text))
-for(i in 1:num.label){
-  class.ind <- which(label.text == level.label[i])
-  label[class.ind] <- i
-}
-data <-as.matrix(graph.input$content[, -which(names(graph.input$content) %in% c("paper_id", "class"))])
-graph.input[["features"]] <- list(data=data, label=label) 
-
-
-
-
-K <- 2
-input.shape <- list()
-input.shape[['label']] <- c(batch.size)
-input.shape[['data']] <- c(batch.size, input.size, max.nodes)
-for(i in 1:K){
-  variable.P <- paste0("P.",i,".tilde")
-  input.shape[[variable.P]] <- c(max.nodes, max.nodes)
-}
 
 gcn.sym <- GCN.layer.link.prediction(input.size, 
                                      max.nodes, 
@@ -75,25 +83,28 @@ gcn.model <- GCN.link.setup.model(gcn.sym,
                                   batch.size,
                                   K=2)
 
-# training process
-num.nodes.train <- floor((length(label) * 0.3)/batch.size)*batch.size
-num.nodes.valid <- floor((length(label) * 0.1)/batch.size)*batch.size
-nodes.pool <- sample(c(1:length(label)), (num.nodes.train+num.nodes.valid), replace=FALSE)
-nodes.train.pool <- sort(nodes.pool[1:num.nodes.train])
-nodes.valid.pool <- sort(nodes.pool[(num.nodes.train+1):(num.nodes.train+num.nodes.valid)])
+train.nodes.pairs <- shuffled.nodes.pairs[1:(4*batch.size)]
+train.pairs.label <- shuffled.pairs.label[1:(4*batch.size)]
+
+valid.nodes.pairs <- shuffled.nodes.pairs[(4*batch.size+1):num.pairs]
+valid.pairs.label <- shuffled.pairs.label[(4*batch.size+1):num.pairs]
+
+train.data <- list(nodes.pairs=train.nodes.pairs, pairs.label=train.pairs.label)
+valid.data <- list(nodes.pairs=valid.nodes.pairs, pairs.label=valid.pairs.label)
 
 learning.rate <- 0.005
 weight.decay <- 0
 clip.gradient <- 1
 optimizer <- 'sgd'
 lr.scheduler <- mx.lr_scheduler.FactorScheduler(step = 480, factor=0.5, stop_factor_lr = 1e-3)
-gcn.model.trained <- GCN.trian.model(model = gcn.model,
-                                     graph.input = graph.input,
-                                     nodes.train.pool = nodes.train.pool,
-                                     nodes.valid.pool = nodes.valid.pool,
-                                     num.epoch = 100,
-                                     learning.rate = learning.rate,
-                                     weight.decay = weight.decay,
-                                     clip.gradient = clip.gradient,
-                                     optimizer = optimizer)
-                                     #lr.scheduler = lr.scheduler)
+
+gcn.model.trained <- GCN.link.trian.model(model = gcn.model,
+                                          graph.input = new.graph.input,
+                                          train.data = train.data,
+                                          valid.data = valid.data,
+                                          num.epoch = 100,
+                                          learning.rate = learning.rate,
+                                          weight.decay = weight.decay,
+                                          clip.gradient = clip.gradient,
+                                          optimizer = optimizer)
+                                          #lr.scheduler = lr.scheduler)
