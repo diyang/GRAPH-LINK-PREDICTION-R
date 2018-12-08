@@ -289,18 +289,7 @@ GCN.link.trian.model <- function(model,
       batch.begin <- (batch.counter-1)*batch.size+1
       node.pair.train.batch       <- train.data$nodes.pairs[batch.begin:(batch.begin+batch.size-1)] 
       node.pair.train.label.batch <- train.data$pairs.label[batch.begin:(batch.begin+batch.size-1)]
-      gcn.pair.train.input <- Graph.enclose.encode(node.pair.train.batch, graph.input$adjmatrix, K, max.nodes=NULL)
-      
-      idx <- 4
-      sub.graph <- graph_from_adjacency_matrix(gcn.pair.train.input[[idx]]$adj, mode = "undirected" )
-      V(sub.graph)$name <- gcn.pair.train.input[[idx]]$sorted_neighbors
-      
-      a <- gcn.pair.train.input[[idx]]$a
-      b <- gcn.pair.train.input[[idx]]$b
-      
-      plot(sub.graph, vertex.label.color="black",
-           vertex.color=c( "tomato", "gold")[1+(V(sub.graph)$name %in% c(a,b))],
-           edge.width=3, vertex.size = c(12,17)[1+(V(sub.graph)$name %in% c(a,b))])
+      gcn.pair.train.input <- Graph.enclose.encode(node.pair.train.batch, graph.input$adjmatrix, K, max.nodes)
       
       # initialise data tensor container
       gcn.pair.t.data <- array(0, dim=c(batch.size, input.size, max.nodes))
@@ -342,7 +331,7 @@ GCN.link.trian.model <- function(model,
     ####################
     # batch validating #
     ####################
-    if(!is.null(nodes.valid.pool)){
+    if(!is.null(valid.data)){
       cat("\n")
       cat("Validating \n")
       valid.nll <- 0

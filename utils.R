@@ -46,7 +46,7 @@ chebyshev.polynomials <- function(adj, K)
   
   hop.deg <- K+1
   if(hop.deg > 2){
-    for(i in 3:K){
+    for(i in 3:hop.deg){
       t_k_minus_one <- t_k[[length(t_k)]]
       t_k_minus_two <- t_k[[(length(t_k)-1)]]
       t_k_temp <- 2*scaled_laplacian%*%t_k_minus_one - t_k_minus_two
@@ -109,7 +109,8 @@ Graph.enclose.encode <- function(nodes.pairs,
     for(hop in 1:K){
       
       if(hop == 1){
-        temp.nodes.pool <- c(nodes.pairs[[i]]$a, nodes.pairs[[i]]$b)
+        #temp.nodes.pool <- c(nodes.pairs[[i]]$a, nodes.pairs[[i]]$b)
+        temp.nodes.pool <- c(2703,1369)
         all.vertices <- temp.nodes.pool
       }else{
         temp.nodes.pool <- temp.neigbor
@@ -166,7 +167,7 @@ Graph.enclose.encode <- function(nodes.pairs,
       }
       label.vertices.changed <- !(sum(((label.vertices.old-label.vertices)**2)) == 0)
     }
-    sorted.vertices <- all.vertices[order(label.vertices)]
+    sorted.vertices <- all.vertices[order(-label.vertices)]
     
     if(!is.null(max.nodes)){
       if(num.vertices > max.nodes){
@@ -310,18 +311,15 @@ loaddata.ppi <- function(){
 }
 
 loaddata.cora <- function(){
-  #csv_cites <-   "I:/Desktop/R/SAGE-GRAPH-R/example_data/CORA/cites.csv"
-  csv_cites <- "../example_data/CORA/cites.csv"
+  csv_cites <- "./example_data/CORA/cites.csv"
   edges.cites <- read.csv(csv_cites, header = FALSE)
   edges.cites <- as.matrix(edges.cites[2:dim(edges.cites)[1],])
   
-  #csv_paper <-   "I:/Desktop/R/SAGE-GRAPH-R/example_data/CORA/paper.csv"
-  csv_paper <- "../example_data/CORA/paper.csv"
+  csv_paper <- "./example_data/CORA/paper.csv"
   paper.class <- read.csv(csv_paper, header = FALSE)
   paper.class <- as.matrix(paper.class[2:dim(paper.class)[1],])
   
-  #csv_content <- "I:/Desktop/R/SAGE-GRAPH-R/example_data/CORA/content.csv"
-  csv_content <- "../example_data/CORA/content.csv"
+  csv_content <- "./example_data/CORA/content.csv"
   content.class <- read.csv(csv_content, header = FALSE)
   content.class <- content.class[2:dim(content.class)[1],]
   column.names <-  c("paper_id",as.character(unique(content.class$V2)),"class")
@@ -362,4 +360,28 @@ loaddata.cora <- function(){
   
   outputs <- list(adjmatrix = adjmatrix, P = P, Atilde = A.tilde, Dsqrt = D.sqrt, graph = graph, content = content.df)
   return(outputs)
+}
+
+sub.graph.display <- function(sub.graph)
+{
+  max.nodes <- dim(sub.graph$adj)[1]
+  sub.graph <- graph_from_adjacency_matrix(sub.graph$adj, mode = "undirected" )
+  num.vertices <- length(sub.graph$sorted_neighbors)
+  if(num.vertices < max.nodes){
+    padding.vertices <- c(-1:-(max.nodes-num.vertices))
+    vertices.names <- c(sub.graph$sorted_neighbors, padding.vertices)
+  }else{
+    vertices.names <- sub.graph$sorted_neighbors
+  }
+  
+  V(sub.graph)$name <- vertices.names
+  iso <- which(V(sub.graph)$name < 0)
+  sub.graph <- delete.vertices(sub.graph, iso)
+  
+  a <- sub.graph$a
+  b <- sub.graph$b
+  
+  plot(sub.graph, vertex.label.color="black",
+       vertex.color=c( "tomato", "gold")[1+(V(sub.graph)$name %in% c(a,b))],
+       edge.width=3, vertex.size = c(15,18)[1+(V(sub.graph)$name %in% c(a,b))])
 }

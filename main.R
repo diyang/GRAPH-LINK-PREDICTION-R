@@ -1,8 +1,8 @@
 require(mxnet)
 #windows
-setwd("I:/Desktop/R/SAGE-GRAPH-R/graph_link_prediction")
+#setwd("I:/Desktop/R/SAGE-GRAPH-R/graph_link_prediction")
 #Mac
-#setwd("~/Documents/GRAPH-LINK-PREDICTION-R")
+setwd("~/Documents/GRAPH-LINK-PREDICTION-R")
 source("model.R")
 source("utils.R")
 source("train.R")
@@ -15,6 +15,7 @@ adj <- org.graph.input$adjmatrix
 edge.list <- as_edgelist(org.graph.input$graph)
 
 # deliberately extract some edges, and re-construct graph
+set.seed(123)
 batch.size <- 100
 num.edge <- dim(edge.list)[1]
 pos.pair.indices.pool <- sample(c(1:num.edge), (batch.size*3), replace=FALSE)
@@ -65,10 +66,10 @@ new.graph.input <- list(adjmatrix = adjmatrix, P = P, Atilde = A.tilde, Dsqrt = 
 new.graph.input[['features']] <- data
 
 K <- 2
-batch.size <- 100
+batch.size <- 50
 num.hidden <- c(20,20)
 max.nodes <- 100
-num.filters <- c(10,5)
+num.filters <- c(5,3)
 input.size <- dim(data)[2]
 
 gcn.sym <- GCN.layer.link.prediction(input.size, 
@@ -92,7 +93,7 @@ valid.pairs.label <- shuffled.pairs.label[(4*batch.size+1):num.pairs]
 train.data <- list(nodes.pairs=train.nodes.pairs, pairs.label=train.pairs.label)
 valid.data <- list(nodes.pairs=valid.nodes.pairs, pairs.label=valid.pairs.label)
 
-learning.rate <- 0.005
+learning.rate <- 0.01
 weight.decay <- 0
 clip.gradient <- 1
 optimizer <- 'sgd'
