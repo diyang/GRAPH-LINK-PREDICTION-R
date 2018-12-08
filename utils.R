@@ -109,8 +109,8 @@ Graph.enclose.encode <- function(nodes.pairs,
     for(hop in 1:K){
       
       if(hop == 1){
-        #temp.nodes.pool <- c(nodes.pairs[[i]]$a, nodes.pairs[[i]]$b)
-        temp.nodes.pool <- c(2703,1369)
+        temp.nodes.pool <- c(nodes.pairs[[i]]$a, nodes.pairs[[i]]$b)
+        #temp.nodes.pool <- c(2703,1369)
         all.vertices <- temp.nodes.pool
       }else{
         temp.nodes.pool <- temp.neigbor
@@ -362,24 +362,24 @@ loaddata.cora <- function(){
   return(outputs)
 }
 
-sub.graph.display <- function(sub.graph)
+sub.graph.display <- function(sub.graph.input)
 {
-  max.nodes <- dim(sub.graph$adj)[1]
-  sub.graph <- graph_from_adjacency_matrix(sub.graph$adj, mode = "undirected" )
-  num.vertices <- length(sub.graph$sorted_neighbors)
+  max.nodes <- dim(sub.graph.input$adj)[1]
+  sub.graph <- graph_from_adjacency_matrix(sub.graph.input$adj, mode = "undirected" )
+  num.vertices <- length(sub.graph.input$sorted_neighbors)
   if(num.vertices < max.nodes){
     padding.vertices <- c(-1:-(max.nodes-num.vertices))
-    vertices.names <- c(sub.graph$sorted_neighbors, padding.vertices)
+    vertices.names <- c(sub.graph.input$sorted_neighbors, padding.vertices)
   }else{
-    vertices.names <- sub.graph$sorted_neighbors
+    vertices.names <- sub.graph.input$sorted_neighbors
   }
   
   V(sub.graph)$name <- vertices.names
   iso <- which(V(sub.graph)$name < 0)
   sub.graph <- delete.vertices(sub.graph, iso)
   
-  a <- sub.graph$a
-  b <- sub.graph$b
+  a <- sub.graph.input$a
+  b <- sub.graph.input$b
   
   plot(sub.graph, vertex.label.color="black",
        vertex.color=c( "tomato", "gold")[1+(V(sub.graph)$name %in% c(a,b))],
