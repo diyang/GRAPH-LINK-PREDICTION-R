@@ -269,7 +269,7 @@ GCN.setup.model <- function(gcn.sym,
   args <- input.shape
   args$symbol <- gcn.sym
   args$ctx <- ctx
-  args$grad.req <- 'write'
+  args$grad.req <- 'add'
   gcn.exec <- do.call(mx.simple.bind, args)
   
   mx.exec.update.arg.arrays(gcn.exec, params$arg.params, match.name = TRUE)
@@ -370,7 +370,7 @@ GCN.link.trian.model <- function(model,
       mx.exec.update.arg.arrays(m$gcn.exec, gcn.pair.train.data, match.name = TRUE)
       mx.exec.forward(m$gcn.exec, is.train = TRUE)
       mx.exec.backward(m$gcn.exec)
-      arg.blocks <- opt.updater(weight = m$gcn.exec$ref.arg.arrays, grad = m$gcn.exec$ref.grad.arrays)
+      arg.blocks <- opt.updater(m$gcn.exec$ref.arg.arrays, m$gcn.exec$ref.grad.arrays)
       mx.exec.update.arg.arrays(m$gcn.exec, arg.blocks, skip.null=TRUE)
       
       train.metric <- mx.metric.accuracy$update(m$gcn.exec$ref.arg.arrays[["label"]], m$gcn.exec$ref.outputs[["sm_output"]], train.metric)
@@ -475,18 +475,18 @@ GCN.link.setup.model <- function(gcn.sym,
   args <- input.shape
   args$symbol <- gcn.sym
   args$ctx <- ctx
-  args$grad.req <- 'add'
+  args$grad.req <- 'write'
   gcn.exec <- do.call(mx.simple.bind, args)
   
   mx.exec.update.arg.arrays(gcn.exec, params$arg.params, match.name = TRUE)
   mx.exec.update.aux.arrays(gcn.exec, params$aux.params, match.name = TRUE)
   
-  grad.arrays <- list()
-  for (name in names(gcn.exec$ref.grad.arrays)) {
-    if (is.param.name(name))
-      grad.arrays[[name]] <- gcn.exec$ref.arg.arrays[[name]]*0
-  }
-  mx.exec.update.grad.arrays(gcn.exec, grad.arrays, match.name=TRUE)
+  #grad.arrays <- list()
+  #for (name in names(gcn.exec$ref.grad.arrays)) {
+  #  if (is.param.name(name))
+  #    grad.arrays[[name]] <- gcn.exec$ref.arg.arrays[[name]]*0
+  #}
+  #mx.exec.update.grad.arrays(gcn.exec, grad.arrays, match.name=TRUE)
   
   return (list(gcn.exec = gcn.exec, 
                symbol = gcn.sym,

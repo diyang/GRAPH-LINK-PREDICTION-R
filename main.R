@@ -1,3 +1,7 @@
+# Clean workspace
+rm(list=ls())
+cat('\014')
+
 require(mxnet)
 #windows
 #setwd("I:/Desktop/R/SAGE-GRAPH-R/graph_link_prediction")

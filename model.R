@@ -56,9 +56,9 @@ Graph.Convolution.batch <- function(data,
     data.aggerator[[i]] <- mx.symbol.dot(layer.tP.slice[[i]], data.slice[[i]])
   }
   data.aggerator.concat <- mx.symbol.Concat(data=data.aggerator, num.args = batch.size, dim=0)
-  data.slice.concat <- mx.symbol.Reshape(mx.symbol.transpose(data=data, axes=c(1,0,2)), shape=c(input.size, (batch.size*max.nodes)))
-  conv.input <- mx.symbol.Concat(data = c(data.slice.concat, data.aggerator.concat), num.args = 2, dim = 1)
-  graph.output <- mx.symbol.FullyConnected(data=conv.input, num_hidden = num.hidden)
+  #data.slice.concat <- mx.symbol.Reshape(mx.symbol.transpose(data=data, axes=c(1,0,2)), shape=c(input.size, (batch.size*max.nodes)))
+  #conv.input <- mx.symbol.Concat(data = c(data.slice.concat, data.aggerator.concat), num.args = 2, dim = 1)
+  graph.output <- mx.symbol.FullyConnected(data=data.aggerator.concat, num_hidden = num.hidden)
   graph.activation <- mx.symbol.Activation(data=graph.output, act.type='relu')
   graph.L2norm.flatten <- mx.symbol.L2Normalization(graph.activation)
   graph.L2norm <- mx.symbol.transpose(mx.symbol.Reshape(data=graph.L2norm.flatten, shape=c(num.hidden, max.nodes, batch.size)), axes=c(0,2,1))
@@ -127,16 +127,16 @@ GCN.layer.link.prediction <- function(input.size,
   conv_1 <- mx.symbol.Convolution(data = conv.1d.input, kernel = c(1, kernel_1), num_filter = num.filters[1], pad=c(0,1)) 
   tanh_1 <- mx.symbol.Activation(data = conv_1, act_type = "tanh") 
   pool_1 <- mx.symbol.Pooling(data = tanh_1, pool_type = "max", kernel = c(1,kernel_1), pad=c(0,1)) 
-  # 2nd convolutional layer 
   
-  #kernel_2 <- ceiling(kernel_1/3)
-  #conv_2 <- mx.symbol.Convolution(data = pool_1, kernel = c(1, kernel_2), num_filter = num.filters[2], pad=c(0,1)) 
-  #tanh_2 <- mx.symbol.Activation(data = conv_2, act_type = "tanh") 
-  #pool_2 <- mx.symbol.Pooling(data=tanh_2, pool_type = "max", kernel = c(1,kernel_2), pad=c(0,1)) 
+  # 2nd convolutional layer 
+  kernel_2 <- ceiling(kernel_1/3)
+  conv_2 <- mx.symbol.Convolution(data = pool_1, kernel = c(1, kernel_2), num_filter = num.filters[2], pad=c(0,1)) 
+  tanh_2 <- mx.symbol.Activation(data = conv_2, act_type = "tanh") 
+  pool_2 <- mx.symbol.Pooling(data=tanh_2, pool_type = "max", kernel = c(1,kernel_2), pad=c(0,1)) 
   
   # Dense layers
   # 1st fully connected layer 
-  flatten <- mx.symbol.Flatten(data = pool_1) 
+  flatten <- mx.symbol.Flatten(data = pool_2) 
   fc_1 <- mx.symbol.FullyConnected(data = flatten, num_hidden = 100) 
   tanh_3 <- mx.symbol.Activation(data = fc_1, act_type = "tanh") 
   # 2nd fully connected layer 
