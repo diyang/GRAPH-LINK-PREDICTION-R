@@ -129,14 +129,14 @@ GCN.layer.link.prediction <- function(input.size,
   pool_1 <- mx.symbol.Pooling(data = tanh_1, pool_type = "max", kernel = c(1,kernel_1), pad=c(0,1)) 
   # 2nd convolutional layer 
   
-  kernel_2 <- ceiling(kernel_1/3)
-  conv_2 <- mx.symbol.Convolution(data = pool_1, kernel = c(1, kernel_2), num_filter = num.filters[2], pad=c(0,1)) 
-  tanh_2 <- mx.symbol.Activation(data = conv_2, act_type = "tanh") 
-  pool_2 <- mx.symbol.Pooling(data=tanh_2, pool_type = "max", kernel = c(1,kernel_2), pad=c(0,1)) 
+  #kernel_2 <- ceiling(kernel_1/3)
+  #conv_2 <- mx.symbol.Convolution(data = pool_1, kernel = c(1, kernel_2), num_filter = num.filters[2], pad=c(0,1)) 
+  #tanh_2 <- mx.symbol.Activation(data = conv_2, act_type = "tanh") 
+  #pool_2 <- mx.symbol.Pooling(data=tanh_2, pool_type = "max", kernel = c(1,kernel_2), pad=c(0,1)) 
   
   # Dense layers
   # 1st fully connected layer 
-  flatten <- mx.symbol.Flatten(data = pool_2) 
+  flatten <- mx.symbol.Flatten(data = pool_1) 
   fc_1 <- mx.symbol.FullyConnected(data = flatten, num_hidden = 100) 
   tanh_3 <- mx.symbol.Activation(data = fc_1, act_type = "tanh") 
   # 2nd fully connected layer 
@@ -144,3 +144,47 @@ GCN.layer.link.prediction <- function(input.size,
   loss.all <- mx.symbol.SoftmaxOutput(data=fc_2, label=label, name="sm") 
   return(loss.all)
 }
+
+m2 <- function(data,
+               tP,
+               batch.size,
+               max.nodes)
+{
+  data.slice <- mx.symbol.SliceChannel(data=data, num_outputs=batch.size, axis= 2, squeeze_axis=1)
+  layer.tP.slice <- mx.symbol.SliceChannel(data=tP, num_outputs=batch.size, axis= 2, squeeze_axis=1)
+  data.aggerator <- list()
+  for(i in 1:batch.size){
+    data.aggerator[[i]] <- mx.symbol.dot(layer.tP.slice[[i]], data.slice[[i]])
+  }
+  data.aggerator.concat <- mx.symbol.Concat(data=data.aggerator, num.args = batch.size, dim=0)
+  #data.slice.concat <- mx.symbol.Reshape(mx.symbol.transpose(data=data, axes=c(1,0,2)), shape=c(input.size, (batch.size*max.nodes)))
+  #conv.input <- mx.symbol.Concat(data = c(data.slice.concat, data.aggerator.concat), num.args = 2, dim = 1)
+  return(data.aggerator.concat)
+}
+
+m1 <- function(input.size,
+               max.nodes,
+               batch.size,
+               K=2)
+{
+  data <- mx.symbol.Variable('data')
+  layer.tP <- list()
+  layer.outputs <- list()
+
+  for(i in K:1){
+    layer.tP[[i]] <- mx.symbol.Variable(paste0("P.",i,".tilde"))
+    layer.outputs[[i]] <- m2(data=data,
+                             tP=layer.tP[[i]],
+                             batch.size,
+                             max.nodes)
+  }
+  data.slice.concat <- mx.symbol.Reshape(mx.symbol.transpose(data=data, axes=c(1,0,2)), shape=c(input.size, (batch.size*max.nodes)))
+  graph.conv.stack <- mx.symbol.Concat(data = c(data.slice.concat,layer.outputs), num.args = (K+1), dim = 1, name="sm")
+  aa <- mx.symbol.Reshape(data=graph.conv.stack, shape=c((input.size*(K+1)), max.nodes, batch.size))
+  bb <- mx.symbol.transpose(data=aa, axes=c(0,2,1))
+  
+  conv.1d.input <- mx.symbol.Reshape(mx.symbol.transpose(bb, axes = c(0,1,2)), shape=c(max.nodes, (input.size*(K+1)), 1, batch.size))
+  
+  return(conv.1d.input)
+}
+

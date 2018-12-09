@@ -167,7 +167,7 @@ Graph.enclose.encode <- function(nodes.pairs,
       }
       label.vertices.changed <- !(sum(((label.vertices.old-label.vertices)**2)) == 0)
     }
-    sorted.vertices <- all.vertices[order(-label.vertices)]
+    sorted.vertices <- all.vertices[order(label.vertices)]
     
     if(!is.null(max.nodes)){
       if(num.vertices > max.nodes){

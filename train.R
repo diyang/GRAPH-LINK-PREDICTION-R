@@ -45,6 +45,41 @@ calc.nll <- function(seq.label.probs, batch.size) {
   return (nll)
 }
 
+# Extract model from executors
+mx.model.extract.model <- function(symbol, train.execs) {
+  reduce.sum <- function(x) Reduce("+", x)
+  # Get the parameters
+  ndevice <- length(train.execs)
+  narg <- length(train.execs[[1]]$ref.arg.arrays)
+  arg.params <- lapply(1:narg, function(k) {
+    if (is.null(train.execs[[1]]$ref.grad.arrays[[k]])) {
+      result <- NULL
+    } else {
+      result <- reduce.sum(lapply(train.execs, function(texec) {
+        mx.nd.copyto(texec$ref.arg.arrays[[k]], mx.cpu())
+      })) / ndevice
+    }
+    return(result)
+  })
+  names(arg.params) <- names(train.execs[[1]]$ref.arg.arrays)
+  arg.params <- mx.util.filter.null(arg.params)
+  # Get the auxiliary
+  naux <- length(train.execs[[1]]$ref.aux.arrays)
+  if (naux != 0) {
+    aux.params <- lapply(1:naux, function(k) {
+      reduce.sum(lapply(train.execs, function(texec) {
+        mx.nd.copyto(texec$ref.aux.arrays[[k]], mx.cpu())
+      })) / ndevice
+    })
+    names(aux.params) <- names(train.execs[[1]]$ref.aux.arrays)
+  } else {
+    aux.params <- list()
+  }
+  # Get the model
+  model <- list(symbol=symbol, arg.params=arg.params, aux.params=aux.params)
+  return(structure(model, class="MXFeedForwardModel"))
+}
+
 GCN.trian.model <- function(model,
                             graph.input,
                             nodes.train.pool,
@@ -70,7 +105,8 @@ GCN.trian.model <- function(model,
                        lr_scheduler = lr.scheduler)
   
   opt.updater <- mx.opt.get.updater(opt, m$gcn.exec$ref.arg.arrays)
-
+  
+  
   cat('\014')
   for(epoch in 1:num.epoch){
     cat(paste0('Training Epoch ', epoch, '\n'))
@@ -80,6 +116,7 @@ GCN.trian.model <- function(model,
     ##################
     train.nll <- 0
     num.batch.train <- floor(length(nodes.train.pool)/batch.size)
+    train.metric <- mx.metric.accuracy$init()
     for(batch.counter in 1:num.batch.train){
       # gcn input data preparation
       batch.begin <- (batch.counter-1)*batch.size+1
@@ -118,11 +155,17 @@ GCN.trian.model <- function(model,
       mx.exec.backward(m$gcn.exec)
       arg.blocks <- opt.updater(weight = m$gcn.exec$ref.arg.arrays, grad = m$gcn.exec$ref.grad.arrays)
       mx.exec.update.arg.arrays(m$gcn.exec, arg.blocks, skip.null=TRUE)
-
-      label.probs <- mx.nd.choose.element.0index(m$gcn.exec$ref.outputs[["sm_output"]], m$gcn.exec$ref.arg.arrays[["label"]])
-      train.nll <- train.nll + calc.nll(as.array(label.probs), batch.size)
-      cat(paste0("Epoch [", epoch, "] Batch [", batch.counter, "] Trian: NLL=", train.nll / batch.counter,"\n"))
+      
+      train.metric <- mx.metric.accuracy$update(m$gcn.exec$ref.arg.arrays[["label"]], m$gcn.exec$ref.outputs[["sm_output"]], train.metric)
+      result <- mx.metric.accuracy$get(train.metric)
+      #cat(paste0("[", epoch, "] Train-", result$name, "=", result$value, "\n"))
+      #label.probs <- mx.nd.choose.element.0index(m$gcn.exec$ref.outputs[["sm_output"]], m$gcn.exec$ref.arg.arrays[["label"]])
+      #train.nll <- train.nll + calc.nll(as.array(label.probs), batch.size)
+      cat(paste0("Epoch [", epoch, "] Batch [", batch.counter, "] Trian: ",result$name,"=", result$value,"\n"))
     }
+    result <- mx.metric.accuracy$get(train.metric)
+    cat(paste0("[", epoch, "] Train-", result$name, "=", result$value, "\n"))
+    
     ####################
     # batch validating #
     ####################
@@ -131,6 +174,7 @@ GCN.trian.model <- function(model,
       cat("Validating \n")
       valid.nll <- 0
       num.batch.valid <- floor(length(nodes.valid.pool)/batch.size)
+      eval.metric <- mx.metric.accuracy$init()
       for(batch.counter in 1:num.batch.valid){
         # gcn input data preparation
         batch.begin <- (batch.counter-1)*batch.size+1
@@ -167,10 +211,14 @@ GCN.trian.model <- function(model,
         mx.exec.update.arg.arrays(m$gcn.exec, gcn.valid.data, match.name = TRUE)
         mx.exec.forward(m$gcn.exec, is.train = FALSE)
         
-        label.probs <- mx.nd.choose.element.0index(m$gcn.exec$ref.outputs[["sm_output"]], m$gcn.exec$ref.arg.arrays[["label"]])
-        valid.nll <- valid.nll + calc.nll(as.array(label.probs), batch.size)
-        cat(paste0("Epoch [", epoch, "] Batch [", batch.counter, "] Valid: NLL=", valid.nll / batch.counter,"\n"))
+        eval.metric <- mx.metric.accuracy$update(m$gcn.exec$ref.arg.arrays[["label"]], m$gcn.exec$ref.outputs[["sm_output"]], eval.metric)
+        result <- mx.metric.accuracy$get(eval.metric)
+        #label.probs <- mx.nd.choose.element.0index(m$gcn.exec$ref.outputs[["sm_output"]], m$gcn.exec$ref.arg.arrays[["label"]])
+        #valid.nll <- valid.nll + calc.nll(as.array(label.probs), batch.size)
+        cat(paste0("Epoch [", epoch, "] Batch [", batch.counter, "] Valid: ",result$name,"=", result$value,"\n"))
       }
+      result <- mx.metric.accuracy$get(eval.metric)
+      cat(paste0("[", epoch, "] Valid-", result$name, "=", result$value, "\n"))
     }
     cat("\n")
   }
@@ -221,7 +269,7 @@ GCN.setup.model <- function(gcn.sym,
   args <- input.shape
   args$symbol <- gcn.sym
   args$ctx <- ctx
-  args$grad.req <- 'add'
+  args$grad.req <- 'write'
   gcn.exec <- do.call(mx.simple.bind, args)
   
   mx.exec.update.arg.arrays(gcn.exec, params$arg.params, match.name = TRUE)
@@ -284,6 +332,7 @@ GCN.link.trian.model <- function(model,
     ##################
     train.nll <- 0
     num.batch.train <- floor(length(train.data$nodes.pairs)/batch.size)
+    train.metric <- mx.metric.accuracy$init()
     for(batch.counter in 1:num.batch.train){
       # gcn input data preparation
       batch.begin <- (batch.counter-1)*batch.size+1
@@ -324,10 +373,16 @@ GCN.link.trian.model <- function(model,
       arg.blocks <- opt.updater(weight = m$gcn.exec$ref.arg.arrays, grad = m$gcn.exec$ref.grad.arrays)
       mx.exec.update.arg.arrays(m$gcn.exec, arg.blocks, skip.null=TRUE)
       
-      label.probs <- mx.nd.choose.element.0index(m$gcn.exec$ref.outputs[["sm_output"]], m$gcn.exec$ref.arg.arrays[["label"]])
-      train.nll <- train.nll + calc.nll(as.array(label.probs), batch.size)
-      cat(paste0("Epoch [", epoch, "] Batch [", batch.counter, "] Trian: NLL=", train.nll / batch.counter,"\n"))
+      train.metric <- mx.metric.accuracy$update(m$gcn.exec$ref.arg.arrays[["label"]], m$gcn.exec$ref.outputs[["sm_output"]], train.metric)
+      result <- mx.metric.accuracy$get(train.metric)
+      
+      #label.probs <- mx.nd.choose.element.0index(m$gcn.exec$ref.outputs[["sm_output"]], m$gcn.exec$ref.arg.arrays[["label"]])
+      #train.nll <- train.nll + calc.nll(as.array(label.probs), batch.size)
+      cat(paste0("Epoch [", epoch, "] Batch [", batch.counter, "] Trian: ", result$name,"=", result$value,"\n"))
     }
+    result <- mx.metric.accuracy$get(train.metric)
+    cat(paste0("[", epoch, "] Train-", result$name, "=", result$value, "\n"))
+    
     ####################
     # batch validating #
     ####################
@@ -336,6 +391,7 @@ GCN.link.trian.model <- function(model,
       cat("Validating \n")
       valid.nll <- 0
       num.batch.valid <- floor(length(valid.data$nodes.pairs)/batch.size)
+      eval.metric <- mx.metric.accuracy$init()
       for(batch.counter in 1:num.batch.valid){
         # gcn input data preparation
         batch.begin <- (batch.counter-1)*batch.size+1
@@ -373,10 +429,15 @@ GCN.link.trian.model <- function(model,
         mx.exec.update.arg.arrays(m$gcn.exec, gcn.pair.valid.data, match.name = TRUE)
         mx.exec.forward(m$gcn.exec, is.train = FALSE)
         
-        label.probs <- mx.nd.choose.element.0index(m$gcn.exec$ref.outputs[["sm_output"]], m$gcn.exec$ref.arg.arrays[["label"]])
-        valid.nll <- valid.nll + calc.nll(as.array(label.probs), batch.size)
-        cat(paste0("Epoch [", epoch, "] Batch [", batch.counter, "] Valid: NLL=", valid.nll / batch.counter,"\n"))
+        eval.metric <- mx.metric.accuracy$update(m$gcn.exec$ref.arg.arrays[["label"]], m$gcn.exec$ref.outputs[["sm_output"]], eval.metric)
+        result <- mx.metric.accuracy$get(eval.metric)
+        
+        #label.probs <- mx.nd.choose.element.0index(m$gcn.exec$ref.outputs[["sm_output"]], m$gcn.exec$ref.arg.arrays[["label"]])
+        #valid.nll <- valid.nll + calc.nll(as.array(label.probs), batch.size)
+        cat(paste0("Epoch [", epoch, "] Batch [", batch.counter, "] Valid: ",result$name,"=", result$value,"\n"))
       }
+      result <- mx.metric.accuracy$get(eval.metric)
+      cat(paste0("[", epoch, "] Valid-", result$name, "=", result$value, "\n"))
     }
     cat("\n")
   }
@@ -434,4 +495,56 @@ GCN.link.setup.model <- function(gcn.sym,
                batch.size = batch.size,
                input.size = input.size))
   
+}
+
+m1.setup <- function(gcn.sym,
+                     max.nodes,
+                     input.size,
+                     batch.size,
+                     K,
+                     ctx = mx.ctx.default(),
+                     initializer=mx.init.uniform(0.01))
+{
+  arg.names <- gcn.sym$arguments
+  input.shape <- list()
+  for(name in arg.names){
+    if( grepl('label$', name) )
+    {
+      input.shape[[name]] <- c(batch.size)
+    }else if( grepl('data$', name) ){
+      input.shape[[name]] <- c(batch.size, input.size, max.nodes)
+    }else{
+      for(i in K:1){
+        variable.P <- paste0("P.",i,".tilde")
+        if(grepl(variable.P, name)){
+          input.shape[[name]] <- c(batch.size, max.nodes, max.nodes)
+        }
+      }
+    }
+  }
+  
+  params <- mx.model.init.params(symbol = gcn.sym, input.shape = input.shape, initializer = initializer, ctx = ctx)
+  
+  args <- input.shape
+  args$symbol <- gcn.sym
+  args$ctx <- ctx
+  args$grad.req <- 'write'
+  gcn.exec <- do.call(mx.simple.bind, args)
+  
+  mx.exec.update.arg.arrays(gcn.exec, params$arg.params, match.name = TRUE)
+  mx.exec.update.aux.arrays(gcn.exec, params$aux.params, match.name = TRUE)
+  
+  grad.arrays <- list()
+  for (name in names(gcn.exec$ref.grad.arrays)) {
+    if (is.param.name(name))
+      grad.arrays[[name]] <- gcn.exec$ref.arg.arrays[[name]]*0
+  }
+  mx.exec.update.grad.arrays(gcn.exec, grad.arrays, match.name=TRUE)
+  
+  return (list(gcn.exec = gcn.exec, 
+               symbol = gcn.sym,
+               K = K,
+               max.nodes = max.nodes,
+               batch.size = batch.size,
+               input.size = input.size))
 }

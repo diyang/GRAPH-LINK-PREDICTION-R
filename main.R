@@ -16,7 +16,7 @@ edge.list <- as_edgelist(org.graph.input$graph)
 
 # deliberately extract some edges, and re-construct graph
 set.seed(123)
-batch.size <- 100
+batch.size <- 50
 num.edge <- dim(edge.list)[1]
 pos.pair.indices.pool <- sample(c(1:num.edge), (batch.size*3), replace=FALSE)
 positive.nodes.pairs <- list()
@@ -65,11 +65,10 @@ P <- diag(D.sqrt)%*%A.tilde%*% diag(D.sqrt)
 new.graph.input <- list(adjmatrix = adjmatrix, P = P, Atilde = A.tilde, Dsqrt = D.sqrt, graph = new.graph)
 new.graph.input[['features']] <- data
 
-K <- 2
-batch.size <- 50
-num.hidden <- c(20,20)
+K <- 1
+num.hidden <- c(20)
 max.nodes <- 100
-num.filters <- c(5,3)
+num.filters <- c(5)
 input.size <- dim(data)[2]
 
 gcn.sym <- GCN.layer.link.prediction(input.size, 
@@ -82,10 +81,10 @@ gcn.model <- GCN.link.setup.model(gcn.sym,
                                   max.nodes,
                                   input.size,
                                   batch.size,
-                                  K=2)
+                                  K=K)
 
-train.nodes.pairs <- shuffled.nodes.pairs[1:(4*batch.size)]
-train.pairs.label <- shuffled.pairs.label[1:(4*batch.size)]
+train.nodes.pairs <- shuffled.nodes.pairs#[1:(4*batch.size)]
+train.pairs.label <- (shuffled.pairs.label-1)#[1:(4*batch.size)]
 
 valid.nodes.pairs <- shuffled.nodes.pairs[(4*batch.size+1):num.pairs]
 valid.pairs.label <- shuffled.pairs.label[(4*batch.size+1):num.pairs]
@@ -93,7 +92,7 @@ valid.pairs.label <- shuffled.pairs.label[(4*batch.size+1):num.pairs]
 train.data <- list(nodes.pairs=train.nodes.pairs, pairs.label=train.pairs.label)
 valid.data <- list(nodes.pairs=valid.nodes.pairs, pairs.label=valid.pairs.label)
 
-learning.rate <- 0.01
+learning.rate <- 0.005
 weight.decay <- 0
 clip.gradient <- 1
 optimizer <- 'sgd'
@@ -102,7 +101,7 @@ lr.scheduler <- mx.lr_scheduler.FactorScheduler(step = 480, factor=0.5, stop_fac
 gcn.model.trained <- GCN.link.trian.model(model = gcn.model,
                                           graph.input = new.graph.input,
                                           train.data = train.data,
-                                          valid.data = valid.data,
+                                          valid.data = NULL,
                                           num.epoch = 100,
                                           learning.rate = learning.rate,
                                           weight.decay = weight.decay,
