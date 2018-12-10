@@ -61,7 +61,8 @@ shuffled.pairs.label <- pairs.label[shuffled.indices]
 new.edge.list <- edge.list[-(pos.pair.indices.pool),]
 new.graph <- graph_from_edgelist(new.edge.list, directed = FALSE)
 
-adjmatrix <- as_adj(new.graph, type = 'both', sparse = igraph_opt("sparsematrices"))
+adjmatrix <- as_adj(new.graph, type = 'both', edges=FALSE, sparse = igraph_opt("sparsematrices"))
+adjmatrix[which(adjmatrix>1)] <- 1
 D.sqrt <- sqrt(colSums(adjmatrix))
 A.tilde <- adjmatrix + Diagonal(dim(adjmatrix)[1])
 P <- diag(D.sqrt)%*%A.tilde%*% diag(D.sqrt)
@@ -69,17 +70,16 @@ P <- diag(D.sqrt)%*%A.tilde%*% diag(D.sqrt)
 new.graph.input <- list(adjmatrix = adjmatrix, P = P, Atilde = A.tilde, Dsqrt = D.sqrt, graph = new.graph)
 new.graph.input[['features']] <- data
 
-K <- 1
-num.hidden <- c(20)
-max.nodes <- 100
-num.filters <- c(5)
+K <- 2
+num.hidden <- c(20,20,20)
+max.nodes <- 50
 input.size <- dim(data)[2]
 
-gcn.sym <- GCN.layer.link.prediction(input.size, 
+gcn.sym <- GCN.layer.link.prediction(input.size,
+                                     K,
                                      max.nodes, 
                                      batch.size, 
-                                     num.hidden, 
-                                     num.filters)
+                                     num.hidden)
 
 gcn.model <- GCN.link.setup.model(gcn.sym, 
                                   max.nodes,
@@ -96,9 +96,10 @@ valid.pairs.label <- shuffled.pairs.label[(4*batch.size+1):num.pairs]
 train.data <- list(nodes.pairs=train.nodes.pairs, pairs.label=train.pairs.label)
 valid.data <- list(nodes.pairs=valid.nodes.pairs, pairs.label=valid.pairs.label)
 
-learning.rate <- 0.005
+learning.rate <- 0.01
 weight.decay <- 0
 clip.gradient <- 1
+momentum <- 0.9
 optimizer <- 'sgd'
 lr.scheduler <- mx.lr_scheduler.FactorScheduler(step = 480, factor=0.5, stop_factor_lr = 1e-3)
 
@@ -108,6 +109,7 @@ gcn.model.trained <- GCN.link.trian.model(model = gcn.model,
                                           valid.data = NULL,
                                           num.epoch = 100,
                                           learning.rate = learning.rate,
+                                          momentum= momentum,
                                           weight.decay = weight.decay,
                                           clip.gradient = clip.gradient,
                                           optimizer = optimizer)

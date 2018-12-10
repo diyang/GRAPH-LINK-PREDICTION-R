@@ -304,6 +304,7 @@ GCN.link.trian.model <- function(model,
                                  valid.data = NULL,
                                  num.epoch,
                                  learning.rate = 0.01,
+                                 momentum = 0.9,
                                  weight.decay = 0,
                                  clip.gradient = 1,
                                  optimizer = 'sgd',
@@ -317,7 +318,8 @@ GCN.link.trian.model <- function(model,
   
   opt <- mx.opt.create(optimizer, learning.rate = learning.rate,
                        wd = weight.decay,
-                       rescale.grad = 1, #(1/batch.size),
+                       rescale.grad = (1/batch.size),
+                       momentum = momentum,
                        clip_gradient=clip.gradient,
                        lr_scheduler = lr.scheduler)
   
@@ -461,7 +463,7 @@ GCN.link.setup.model <- function(gcn.sym,
     }else if( grepl('data$', name) ){
       input.shape[[name]] <- c(batch.size, input.size, max.nodes)
     }else{
-      for(i in K:1){
+      for(i in 1:(K+1)){
         variable.P <- paste0("P.",i,".tilde")
         if(grepl(variable.P, name)){
           input.shape[[name]] <- c(batch.size, max.nodes, max.nodes)
@@ -514,7 +516,7 @@ m1.setup <- function(gcn.sym,
     }else if( grepl('data$', name) ){
       input.shape[[name]] <- c(batch.size, input.size, max.nodes)
     }else{
-      for(i in K:1){
+      for(i in 1:(K+1)){
         variable.P <- paste0("P.",i,".tilde")
         if(grepl(variable.P, name)){
           input.shape[[name]] <- c(batch.size, max.nodes, max.nodes)

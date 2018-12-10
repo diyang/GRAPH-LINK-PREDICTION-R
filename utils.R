@@ -53,8 +53,6 @@ chebyshev.polynomials <- function(adj, K)
       t_k[[i]] <- t_k_temp
     }
   }
-  #delete 0 degree
-  t_k <- t_k[-1]
   return(t_k)
 }
 
@@ -99,21 +97,21 @@ subgraph.adj.extract <- function(nodes.pool,
 Graph.enclose.encode <- function(nodes.pairs,
                                  adj,
                                  K,
-                                 max.nodes=NULL)
+                                 max.nodes)
 {
   num.pairs <- length(nodes.pairs)
   outputs <- list()
   for(i in 1:num.pairs){
     
-    # K-hop neigborhood search
-    for(hop in 1:K){
-      
+    # n hop neigborhood search
+    hop <- 1
+    is.continue <- TRUE
+    all.vertices <- list()
+    while(is.continue){
       if(hop == 1){
         temp.nodes.pool <- c(nodes.pairs[[i]]$a, nodes.pairs[[i]]$b)
-        #temp.nodes.pool <- c(2703,1369)
-        all.vertices <- temp.nodes.pool
       }else{
-        temp.nodes.pool <- temp.neigbor
+        temp.nodes.pool <- all.vertices[[(hop-1)]]
       }
       
       temp.initial <- TRUE
@@ -126,76 +124,80 @@ Graph.enclose.encode <- function(nodes.pairs,
         }
       }
       temp.neigbor <- unique(temp.neigbor)
-      all.vertices <- c(all.vertices, temp.neigbor)
+      
+      # check if vertex is already included in the lower hop
+      if(hop > 1){
+        temp.neigbor <- setdiff(temp.neigbor, c(nodes.pairs[[i]]$a, nodes.pairs[[i]]$b, unlist(all.vertices)))
+      }else{
+        temp.neigbor <- setdiff(temp.neigbor, c(nodes.pairs[[i]]$a, nodes.pairs[[i]]$b))
+      }
+      
+      if(length(temp.neigbor) == 0){
+        is.continue <- FALSE
+      }else{
+        all.vertices[[hop]] <- temp.neigbor
+        hop <- hop+1
+        if(length(unlist(all.vertices)) >= (max.nodes-2)){
+          is.continue <- FALSE
+        }
+      }
     }
-    all.vertices <- unique(all.vertices)
     
     # Weisfeiler-Lehman Graph labeling
-    num.vertices <- length(all.vertices)
-    label.vertices <- rep(1, num.vertices)
-    decimal.vertices <- rep(1, num.vertices)
-
-    label.vertices.changed <- TRUE
-    while(label.vertices.changed){
-      for(node.index in 1:num.vertices){
-        node <- all.vertices[node.index]
-        neigbor.nodes <- which(adj[node,]>0)
-        neigbor.indicies <- which(all.vertices %in% neigbor.nodes)
-        if(length(neigbor.indicies) > 0){
-          neigbor.decimals <- array2decimal(sort(label.vertices[neigbor.indicies]))
-        }else{
-          neigbor.decimals <- 0
-        }
-        #update labeling
-        decimal.vertices[node.index] <- label.vertices[node.index]+neigbor.decimals
-      }
-      sorted.decimal.vertices <- sort(decimal.vertices, index.return=TRUE)
-      
-      label <- 1
-      label.vertices.old <- label.vertices
-      for(sort.index in 1:num.vertices){
-        if(sort.index == 1){
-          label.vertices[sorted.decimal.vertices$ix[sort.index]] <- label
-          tmp.decimal.vertex <- sorted.decimal.vertices$x[sort.index]
-        }else{
-          if(tmp.decimal.vertex < sorted.decimal.vertices$x[sort.index]){
-            label <- label+1
+    if(length(all.vertices) > 0){
+      for(hop in 1:length(all.vertices)){
+        temp.vertices <- all.vertices[[hop]]
+        num.temp.vertices <- length(temp.vertices)
+        label.vertices <- rep(1, num.temp.vertices)
+        decimal.vertices <- rep(1, num.temp.vertices)
+        
+        is.continue <- TRUE
+        while(is.continue){
+          for(node.index in 1:num.temp.vertices){
+            node <- temp.vertices[node.index]
+            neigbor.nodes <- which(adj[node,]>0)
+            neigbor.indicies <- which(temp.vertices %in% neigbor.nodes)
+            if(length(neigbor.indicies) > 0){
+              neigbor.decimals <- array2decimal(sort(label.vertices[neigbor.indicies]))
+            }else{
+              neigbor.decimals <- 0
+            }
+            #update labeling
+            decimal.vertices[node.index] <- label.vertices[node.index]+neigbor.decimals
           }
-          label.vertices[sorted.decimal.vertices$ix[sort.index]] <- label
-          tmp.decimal.vertex <- sorted.decimal.vertices$x[sort.index]
+          sorted.decimal.vertices <- sort(decimal.vertices, index.return=TRUE)
+          
+          label <- 1
+          label.vertices.old <- label.vertices
+          for(sort.index in 1:num.temp.vertices){
+            if(sort.index == 1){
+              label.vertices[sorted.decimal.vertices$ix[sort.index]] <- label
+              tmp.decimal.vertex <- sorted.decimal.vertices$x[sort.index]
+            }else{
+              if(tmp.decimal.vertex < sorted.decimal.vertices$x[sort.index]){
+                label <- label+1
+              }
+              label.vertices[sorted.decimal.vertices$ix[sort.index]] <- label
+              tmp.decimal.vertex <- sorted.decimal.vertices$x[sort.index]
+            }
+          }
+          is.continue <- !(sum(((label.vertices.old-label.vertices)**2)) == 0)
         }
+        sorted.vertices <- temp.vertices[order(label.vertices)]
+        all.vertices[[hop]] <- sorted.vertices
       }
-      label.vertices.changed <- !(sum(((label.vertices.old-label.vertices)**2)) == 0)
-    }
-    sorted.vertices <- all.vertices[order(label.vertices)]
-    
-    if(!is.null(max.nodes)){
+      all.vertices.flatten <- c(nodes.pairs[[i]]$a, nodes.pairs[[i]]$b, unlist(all.vertices))
+      num.vertices <- length(all.vertices.flatten)
       if(num.vertices > max.nodes){
-        
-        sorted.node.a.index <- which(sorted.vertices == nodes.pairs[[i]]$a)
-        sorted.node.b.index <- which(sorted.vertices == nodes.pairs[[i]]$b)
-        
-        if(sorted.node.a.index > max.nodes && sorted.node.b.index <= max.nodes){
-          sorted.vertices <- sorted.vertices[-((max.nodes):num.vertices)]
-          sorted.vertices <- c(sorted.vertices, nodes.pairs[[i]]$a)
-        }else if(sorted.node.a.index <= max.nodes && sorted.node.b.index > max.nodes){
-          sorted.vertices <- sorted.vertices[-((max.nodes):num.vertices)]
-          sorted.vertices <- c(sorted.vertices, nodes.pairs[[i]]$b)
-        }else if(sorted.node.a.index  > max.nodes && sorted.node.b.index > max.nodes){
-          sorted.vertices <- sorted.vertices[-((max.nodes-1):num.vertices)]
-          if(sorted.node.a.index < sorted.node.b.index){
-            sorted.vertices <- c(sorted.vertices, nodes.pairs[[i]]$a, nodes.pairs[[i]]$b)
-          }else{
-            sorted.vertices <- c(sorted.vertices, nodes.pairs[[i]]$b, nodes.pairs[[i]]$a)
-          }
-        }else{
-          sorted.vertices <- sorted.vertices[-((max.nodes+1):num.vertices)]
-        }
+        all.vertices.flatten <- all.vertices.flatten[-((max.nodes+1):num.vertices)]
       }
+    }else{
+      all.vertices.flatten <- c(nodes.pairs[[i]]$a, nodes.pairs[[i]]$b)
     }
-    subgraph.adj <- subgraph.adj.extract(sorted.vertices, max.nodes, adj)
+    
+    subgraph.adj <- subgraph.adj.extract(all.vertices.flatten, max.nodes, adj)
     subgraph.tP <- chebyshev.polynomials(subgraph.adj, K)
-    nodes.pairs.data <- list(a=nodes.pairs[[i]]$a, b=nodes.pairs[[i]]$b, sorted_neighbors=sorted.vertices, tP=subgraph.tP, adj=subgraph.adj)
+    nodes.pairs.data <- list(a=nodes.pairs[[i]]$a, b=nodes.pairs[[i]]$b, sorted_neighbors=all.vertices.flatten, tP=subgraph.tP, adj=subgraph.adj)
     outputs[[i]] <- nodes.pairs.data
   }
   return(outputs)
@@ -311,15 +313,15 @@ loaddata.ppi <- function(){
 }
 
 loaddata.cora <- function(){
-  csv_cites <- "./example_data/CORA/cites.csv"
+  csv_cites <- "../example_data/CORA/cites.csv"
   edges.cites <- read.csv(csv_cites, header = FALSE)
   edges.cites <- as.matrix(edges.cites[2:dim(edges.cites)[1],])
   
-  csv_paper <- "./example_data/CORA/paper.csv"
+  csv_paper <- "../example_data/CORA/paper.csv"
   paper.class <- read.csv(csv_paper, header = FALSE)
   paper.class <- as.matrix(paper.class[2:dim(paper.class)[1],])
   
-  csv_content <- "./example_data/CORA/content.csv"
+  csv_content <- "../example_data/CORA/content.csv"
   content.class <- read.csv(csv_content, header = FALSE)
   content.class <- content.class[2:dim(content.class)[1],]
   column.names <-  c("paper_id",as.character(unique(content.class$V2)),"class")

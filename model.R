@@ -56,8 +56,6 @@ Graph.Convolution.batch <- function(data,
     data.aggerator[[i]] <- mx.symbol.dot(layer.tP.slice[[i]], data.slice[[i]])
   }
   data.aggerator.concat <- mx.symbol.Concat(data=data.aggerator, num.args = batch.size, dim=0)
-  #data.slice.concat <- mx.symbol.Reshape(mx.symbol.transpose(data=data, axes=c(1,0,2)), shape=c(input.size, (batch.size*max.nodes)))
-  #conv.input <- mx.symbol.Concat(data = c(data.slice.concat, data.aggerator.concat), num.args = 2, dim = 1)
   graph.output <- mx.symbol.FullyConnected(data=data.aggerator.concat, num_hidden = num.hidden)
   graph.activation <- mx.symbol.Activation(data=graph.output, act.type='relu')
   graph.L2norm.flatten <- mx.symbol.L2Normalization(graph.activation)
@@ -96,19 +94,18 @@ GCN.layer.node.classifiction <- function(num.hidden, num.label, dropout = 0){
 }
 
 GCN.layer.link.prediction <- function(input.size,
+                                      K,
                                       max.nodes,
                                       batch.size,
                                       num.hidden,
-                                      num.filters, 
                                       dropout = 0)
 {
   label <- mx.symbol.Variable('label')
   data <- mx.symbol.Variable('data')
   layer.tP <- list()
   layer.outputs <- list()
-  K <- length(num.hidden)
-  
-  for(i in K:1){
+
+  for(i in 1:(K+1)){
     layer.tP[[i]] <- mx.symbol.Variable(paste0("P.",i,".tilde"))
     layer.outputs[[i]] <- Graph.Convolution.batch(data=data,
                                                   tP=layer.tP[[i]],
@@ -116,28 +113,25 @@ GCN.layer.link.prediction <- function(input.size,
                                                   batch.size,
                                                   max.nodes)
   }
-  concat.input.size <- input.size + sum(num.hidden)
-  graph.conv.stack <- mx.symbol.Concat(data = c(data, layer.outputs), num.args = (K+1), dim = 1)
-  conv.1d.input <- mx.symbol.Reshape(mx.symbol.transpose(graph.conv.stack, axes = c(0,1,2)), shape=c(max.nodes, concat.input.size, 1, batch.size))
+  conv.input.size <- sum(num.hidden)
+  graph.conv.stack <- mx.symbol.Concat(data = c(layer.outputs), num.args = (K+1), dim = 1)
+  conv.1d.input <- mx.symbol.Reshape(mx.symbol.transpose(graph.conv.stack, axes = c(0,1,2)), shape=c(max.nodes, conv.input.size, 1, batch.size))
   
   # 1-D convolution
   # 1st convolutional layer
-  concat.input.size <- input.size + sum(num.hidden)
-  kernel_1 <- ceiling(concat.input.size/3)
-  conv_1 <- mx.symbol.Convolution(data = conv.1d.input, kernel = c(1, kernel_1), num_filter = num.filters[1], pad=c(0,1)) 
+  conv_1 <- mx.symbol.Convolution(data = conv.1d.input, kernel = c(1, conv.input.size), num_filter = (K+1), pad=c(0,1)) 
   tanh_1 <- mx.symbol.Activation(data = conv_1, act_type = "tanh") 
-  pool_1 <- mx.symbol.Pooling(data = tanh_1, pool_type = "max", kernel = c(1,kernel_1), pad=c(0,1)) 
+  pool_1 <- mx.symbol.Pooling(data = tanh_1, pool_type = "max", kernel = c(1,(K+1)), pad=c(0,1)) 
   
   # 2nd convolutional layer 
-  kernel_2 <- ceiling(kernel_1/3)
-  conv_2 <- mx.symbol.Convolution(data = pool_1, kernel = c(1, kernel_2), num_filter = num.filters[2], pad=c(0,1)) 
+  conv_2 <- mx.symbol.Convolution(data = pool_1, kernel = c(ceiling(max.nodes/10),floor(conv.input.size/(K+1))), num_filter = (2*K+1), pad=c(0,1)) 
   tanh_2 <- mx.symbol.Activation(data = conv_2, act_type = "tanh") 
-  pool_2 <- mx.symbol.Pooling(data=tanh_2, pool_type = "max", kernel = c(1,kernel_2), pad=c(0,1)) 
+  pool_2 <- mx.symbol.Pooling(data=tanh_2, pool_type = "max", kernel = c((K+1), (K+1)), pad=c(0,1)) 
   
   # Dense layers
   # 1st fully connected layer 
   flatten <- mx.symbol.Flatten(data = pool_2) 
-  fc_1 <- mx.symbol.FullyConnected(data = flatten, num_hidden = 100) 
+  fc_1 <- mx.symbol.FullyConnected(data = flatten, num_hidden = ceiling(max.nodes/(2*K+1))) 
   tanh_3 <- mx.symbol.Activation(data = fc_1, act_type = "tanh") 
   # 2nd fully connected layer 
   fc_2 <- mx.symbol.FullyConnected(data=tanh_3, num_hidden=2) 
@@ -157,9 +151,12 @@ m2 <- function(data,
     data.aggerator[[i]] <- mx.symbol.dot(layer.tP.slice[[i]], data.slice[[i]])
   }
   data.aggerator.concat <- mx.symbol.Concat(data=data.aggerator, num.args = batch.size, dim=0)
+  graph.L2norm <- mx.symbol.transpose(mx.symbol.Reshape(data=data.aggerator.concat, shape=c(input.size, max.nodes, batch.size)), axes=c(0,2,1))
+  
+  
   #data.slice.concat <- mx.symbol.Reshape(mx.symbol.transpose(data=data, axes=c(1,0,2)), shape=c(input.size, (batch.size*max.nodes)))
   #conv.input <- mx.symbol.Concat(data = c(data.slice.concat, data.aggerator.concat), num.args = 2, dim = 1)
-  return(data.aggerator.concat)
+  return(graph.L2norm)
 }
 
 m1 <- function(input.size,
@@ -171,20 +168,20 @@ m1 <- function(input.size,
   layer.tP <- list()
   layer.outputs <- list()
 
-  for(i in K:1){
+  for(i in 1:(K+1)){
     layer.tP[[i]] <- mx.symbol.Variable(paste0("P.",i,".tilde"))
     layer.outputs[[i]] <- m2(data=data,
                              tP=layer.tP[[i]],
                              batch.size,
                              max.nodes)
   }
-  data.slice.concat <- mx.symbol.Reshape(mx.symbol.transpose(data=data, axes=c(1,0,2)), shape=c(input.size, (batch.size*max.nodes)))
-  graph.conv.stack <- mx.symbol.Concat(data = c(data.slice.concat,layer.outputs), num.args = (K+1), dim = 1, name="sm")
-  aa <- mx.symbol.Reshape(data=graph.conv.stack, shape=c((input.size*(K+1)), max.nodes, batch.size))
-  bb <- mx.symbol.transpose(data=aa, axes=c(0,2,1))
+  graph.conv.stack <- mx.symbol.Concat(data = layer.outputs, num.args = (K+1), dim = 1, name="sm")
+  conv.1d.input <- mx.symbol.Reshape(mx.symbol.transpose(graph.conv.stack, axes = c(0,1,2)), shape=c(max.nodes, (input.size*(K+1)), 1, batch.size))
+  conv.input.size <- input.size*(K+1)
+  conv_1 <- mx.symbol.Convolution(data = conv.1d.input, kernel = c(1, conv.input.size), num_filter = (K+1), pad=c(0,1)) 
+  #tanh_1 <- mx.symbol.Activation(data = conv_1, act_type = "tanh") 
+  #pool_1 <- mx.symbol.Pooling(data = tanh_1, pool_type = "max", kernel = c(1,(K+1)), pad=c(0,1)) 
   
-  conv.1d.input <- mx.symbol.Reshape(mx.symbol.transpose(bb, axes = c(0,1,2)), shape=c(max.nodes, (input.size*(K+1)), 1, batch.size))
-  
-  return(conv.1d.input)
+  return(conv_1)
 }
 
