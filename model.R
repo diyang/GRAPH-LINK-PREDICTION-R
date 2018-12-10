@@ -178,7 +178,7 @@ m1 <- function(input.size,
   graph.conv.stack <- mx.symbol.Concat(data = layer.outputs, num.args = (K+1), dim = 1, name="sm")
   conv.1d.input <- mx.symbol.Reshape(mx.symbol.transpose(graph.conv.stack, axes = c(0,1,2)), shape=c(max.nodes, (input.size*(K+1)), 1, batch.size))
   conv.input.size <- input.size*(K+1)
-  conv_1 <- mx.symbol.Convolution(data = conv.1d.input, kernel = c(1, conv.input.size), num_filter = (K+1), pad=c(0,1)) 
+  conv_1 <- mx.symbol.Convolution(data = conv.1d.input, kernel = c(1, (2*input.size)), num_filter = (K+1), pad=c(0,1)) 
   #tanh_1 <- mx.symbol.Activation(data = conv_1, act_type = "tanh") 
   #pool_1 <- mx.symbol.Pooling(data = tanh_1, pool_type = "max", kernel = c(1,(K+1)), pad=c(0,1)) 
   
