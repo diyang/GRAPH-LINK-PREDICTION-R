@@ -119,20 +119,24 @@ GCN.layer.link.prediction <- function(input.size,
   
   # 1-D convolution
   # 1st convolutional layer
-  conv_1 <- mx.symbol.Convolution(data = conv.1d.input, kernel = c(1, conv.input.size), num_filter = (K+1), pad=c(0,1)) 
+  
+  filter1.size <- conv.input.size - sum(num.hidden[1:K]) + 2
+  conv_1 <- mx.symbol.Convolution(data = conv.1d.input, kernel = c(1, filter1.size), num_filter = (2*K+1), pad=c(1,0)) 
   tanh_1 <- mx.symbol.Activation(data = conv_1, act_type = "tanh") 
-  pool_1 <- mx.symbol.Pooling(data = tanh_1, pool_type = "max", kernel = c(1,(K+1)), pad=c(0,1)) 
+  pool_1 <- mx.symbol.Pooling(data = tanh_1, pool_type = "max", kernel = c(1,(K+1)), pad=c(1,0)) 
   
   # 2nd convolutional layer 
-  conv_2 <- mx.symbol.Convolution(data = pool_1, kernel = c(ceiling(max.nodes/10),floor(conv.input.size/(K+1))), num_filter = (2*K+1), pad=c(0,1)) 
+  filter2.size <- sum(num.hidden[1:K]) - num.hidden[1] +2
+  conv_2 <- mx.symbol.Convolution(data = pool_1, kernel = c((K+1), filter2.size), num_filter = (K+1), pad=c(1,0)) 
   tanh_2 <- mx.symbol.Activation(data = conv_2, act_type = "tanh") 
-  pool_2 <- mx.symbol.Pooling(data=tanh_2, pool_type = "max", kernel = c((K+1), (K+1)), pad=c(0,1)) 
+  pool_2 <- mx.symbol.Pooling(data=tanh_2, pool_type = "max", kernel = c((K+1), (K+1)), pad=c(1,0)) 
   
   # Dense layers
   # 1st fully connected layer 
   flatten <- mx.symbol.Flatten(data = pool_2) 
   fc_1 <- mx.symbol.FullyConnected(data = flatten, num_hidden = ceiling(max.nodes/(2*K+1))) 
   tanh_3 <- mx.symbol.Activation(data = fc_1, act_type = "tanh") 
+  
   # 2nd fully connected layer 
   fc_2 <- mx.symbol.FullyConnected(data=tanh_3, num_hidden=2) 
   loss.all <- mx.symbol.SoftmaxOutput(data=fc_2, label=label, name="sm") 
@@ -178,10 +182,10 @@ m1 <- function(input.size,
   graph.conv.stack <- mx.symbol.Concat(data = layer.outputs, num.args = (K+1), dim = 1, name="sm")
   conv.1d.input <- mx.symbol.Reshape(mx.symbol.transpose(graph.conv.stack, axes = c(0,1,2)), shape=c(max.nodes, (input.size*(K+1)), 1, batch.size))
   conv.input.size <- input.size*(K+1)
-  conv_1 <- mx.symbol.Convolution(data = conv.1d.input, kernel = c(1, (2*input.size)), num_filter = (K+1), pad=c(0,1)) 
-  #tanh_1 <- mx.symbol.Activation(data = conv_1, act_type = "tanh") 
-  #pool_1 <- mx.symbol.Pooling(data = tanh_1, pool_type = "max", kernel = c(1,(K+1)), pad=c(0,1)) 
+  conv_1 <- mx.symbol.Convolution(data = conv.1d.input, kernel = c(1, (input.size+1)), num_filter = (K+1), pad=c(0,1)) 
+  tanh_1 <- mx.symbol.Activation(data = conv_1, act_type = "tanh") 
+  pool_1 <- mx.symbol.Pooling(data = tanh_1, pool_type = "max", kernel = c(1,(input.size+1)), pad=c(0,1)) 
   
-  return(conv_1)
+  return(pool_1)
 }
 
