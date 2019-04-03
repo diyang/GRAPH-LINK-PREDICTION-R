@@ -2,7 +2,7 @@
 
 This repo contains an MXNet implementation of [paper 1](https://www.cse.wustl.edu/~muhan/papers/KDD_2017.pdf) and [paper 2](https://arxiv.org/pdf/1802.09691.pdf) state of the art link prediction in network with R.
 
-![](./docs/sample_and_agg.png)
+![](./docs/link-prediction.png)
 ## Requirements
 All examples use MxNet 0.10.1 library to perform deep learning, 
 and use igraph 1.2.2 to store graph regarding data. To install the library, please type following commands in R Studio
