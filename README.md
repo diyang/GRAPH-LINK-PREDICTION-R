@@ -1,6 +1,6 @@
-# LINK-PREDICTION-MxNet-R
+# LINK-PREDICTION-IN-LARGE-SCALE-NETWORK-MxNet-R
 
-This repo contains an MXNet implementation of [this](https://arxiv.org/pdf/1706.02216.pdf) state of the art Graph Convolutional Neural Network with R.
+This repo contains an MXNet implementation of [paper 1](https://www.cse.wustl.edu/~muhan/papers/KDD_2017.pdf) and [paper 2](https://arxiv.org/pdf/1802.09691.pdf) state of the art link prediction in network with R.
 
 ![](./docs/sample_and_agg.png)
 ## Requirements
@@ -28,13 +28,3 @@ The following is the description of the dataset:
 ## Results & Comparison
 - Please run `main.R`
 - This MXNet implementation achieves *NLL = 0.780* after 100 epochs on the validation dataset
-
-## Hyperparameters
-
-The default arguments in `main.R` achieve equivalent performance to the published results. For other datasets, the following hyper parameters provide a good starting point:
-- K = 2
-- hidden num  = {20,20}
-- random neighbour sampling = {20,10}
-- learning rate = 0.005
-- Dropout after every layer =  0.3
-- Epochs = 100+
