@@ -27,4 +27,3 @@ The following is the description of the dataset:
 > The dictionary consists of 1433 unique words. The README file in the dataset provides more details.
 ## Results & Comparison
 - Please run `main.R`
-- This MXNet implementation achieves *NLL = 0.780* after 100 epochs on the validation dataset
